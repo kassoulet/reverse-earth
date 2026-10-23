@@ -1,0 +1,48 @@
+name: Live smoke test
+
+on:
+  schedule:
+    # Daily at 04:17 UTC, away from the top of the hour.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve the Pages URL
+        id: pages
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER,,}"
+          if [[ "$REPO_NAME" == *.github.io ]]; then
+            url="https://${owner}.github.io/"
+          else
+            url="https://${owner}.github.io/${REPO_NAME}/"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Testing $url"
+
+      - name: Smoke test the live site
+        env:
+          SMOKE_URL: ${{ steps.pages.outputs.url }}
+        run: node map-build/scripts/browser-smoke.mjs

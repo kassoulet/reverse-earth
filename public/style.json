@@ -1,6 +1,6 @@
 {
   "version": 8,
-  "name": "South Up — Natural Earth",
+  "name": "Reverse Earth — Natural Earth",
   "metadata": {
     "description": "A warm, south-up Natural Earth basemap with a compact place-label hierarchy.",
     "south_up": true

@@ -1,6 +1,6 @@
-# South Is Up
+# Reverse Earth
 
-A static, south-up world map built from Natural Earth data.
+Reverse Earth is a static, south-up world map built from Natural Earth data.
 
 - **South is up, north is down, east and west are unchanged.**
 - Antarctica is at the top, Australia and South America in the upper half,
@@ -227,6 +227,10 @@ changes. It needs `world.pmtiles` in `dist/` and a local Chrome or Chromium
 `SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
 against a deployed Pages site instead of a local preview.
 
+The **Live smoke test** workflow runs that deployed-site check against the
+project Pages URL every day at 04:17 UTC, and can be started manually from the
+Actions tab.
+
 ## Deploy to GitHub Pages
 
 The workflow is [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
@@ -294,7 +298,7 @@ map-build/
   natural-earth/            default V1 builder + tests
   transformations/          optional OSM MVT latitude inversion + tests
   scripts/check-size.mjs    deployment size gate
-.github/workflows/          CI, Pages deployment and map-data release
+.github/workflows/          CI, Pages, map-data release and live smoke
 ```
 
 ## Data and licensing

@@ -946,7 +946,7 @@ def build_metadata(minzoom: int, maxzoom: int, counts: dict[str, int]) -> dict[s
         },
     }
     return {
-        "name": "South Up — Natural Earth",
+        "name": "Reverse Earth — Natural Earth",
         "description": (
             "A south-up Natural Earth basemap. Display latitude is the negation "
             "of real geographic latitude; longitude is unchanged."

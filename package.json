@@ -1,8 +1,8 @@
 {
-  "name": "upside-down-world-map",
+  "name": "reverse-earth",
   "version": "1.0.0",
   "private": true,
-  "description": "A static, south-up Natural Earth vector map built with MapLibre GL JS and PMTiles.",
+  "description": "Reverse Earth: a static, south-up Natural Earth vector map built with MapLibre GL JS and PMTiles.",
   "license": "MIT",
   "type": "module",
   "engines": {
