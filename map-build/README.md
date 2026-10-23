@@ -206,8 +206,9 @@ highlight.
 - Dark-green land-cover pixels become a transparent forest wash. This is a
   cartographic classification, not a surveyed forest boundary; dry grassland,
 cropland and desert are deliberately excluded.
-- Both images are warped to Web Mercator at 8,192 × 4,096, split into 256 px
-  WebP tiles for z0–z5, and written as PMTiles. Transparent tiles are skipped.
+- Both images are warped to a square Web Mercator world at 8,192 × 8,192,
+  split into 256 px WebP tiles for z0–z5, and written as PMTiles. Transparent
+  tiles are skipped.
 - The south-up copy is the north-up image flipped vertically. That keeps the
   overlays registered with the south-up vector geometry without a browser-side
   image transform.

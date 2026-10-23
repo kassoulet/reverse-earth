@@ -1137,12 +1137,23 @@ def extract_geometry(geometry: BaseGeometry, layer: str) -> BaseGeometry | None:
     return None
 
 
-def tile_bounds(zoom: int, x: int, y: int) -> tuple[float, float, float, float, float]:
+def tile_bounds(
+    zoom: int, x: int, y: int
+) -> tuple[float, float, float, float, float, float, float]:
+    """Return the tile origin, its buffered clip box and its size.
+
+    The buffer only extends the clip box so features just outside the tile
+    still contribute geometry to the MVT buffer. Coordinates must stay
+    relative to the tile origin (not to the buffered box), otherwise every
+    feature is shifted by the buffer size inside its tile.
+    """
     tile_size = TILE_SIZE * (2 ** (MAX_NATIVE_ZOOM - zoom))
     origin_x = x * tile_size
     origin_y = y * tile_size
     buffer = 4.0 * (2 ** (MAX_NATIVE_ZOOM - zoom))
     return (
+        origin_x,
+        origin_y,
         origin_x - buffer,
         origin_y - buffer,
         origin_x + tile_size + buffer,
@@ -1157,7 +1168,9 @@ def encode_tile(
     x: int,
     y: int,
 ) -> tuple[bytes | None, dict[str, int]]:
-    west, north, east, south, tile_size = tile_bounds(zoom, x, y)
+    origin_x, origin_y, west, north, east, south, tile_size = tile_bounds(
+        zoom, x, y
+    )
     from shapely.geometry import box
 
     clip_box = box(west, north, east, south)
@@ -1188,7 +1201,7 @@ def encode_tile(
             try:
                 tile_geometry = affine_transform(
                     clipped,
-                    [scale, 0, 0, scale, -west * scale, -north * scale],
+                    [scale, 0, 0, scale, -origin_x * scale, -origin_y * scale],
                 )
                 if layer in ("land", "glacier", "water", "wetland", "urban", "park"):
                     tile_geometry = tile_geometry.simplify(2.0, preserve_topology=True)

@@ -65,6 +65,44 @@ class ArchiveTests(unittest.TestCase):
             EXPECTED_LAYERS,
         )
 
+    def test_tile_geometry_is_registered_with_the_world_grid(self):
+        """Features must keep their display-space position inside each tile.
+
+        Lake Victoria's projected bounds in the z0 (4096 unit) tile grid are
+        2407.7–2444.6 by 2013.7–2053.7. Encoding from the buffered clip box
+        instead of the tile origin shifted every layer by 64 units.
+        """
+
+        world = self.reader.get(0, 0, 0)
+        self.assertIsNotNone(world)
+        decoded = mapbox_vector_tile.decode(
+            gzip.decompress(world), default_options={"y_coord_down": True}
+        )
+        lake = next(
+            feature
+            for feature in decoded["water"]["features"]
+            if feature["properties"].get("name") == "Lake Victoria"
+        )
+        points = []
+
+        def collect(coordinates):
+            if (
+                isinstance(coordinates, (list, tuple))
+                and coordinates
+                and isinstance(coordinates[0], (int, float))
+            ):
+                points.append(coordinates)
+                return
+            for part in coordinates:
+                collect(part)
+
+        collect(lake["geometry"]["coordinates"])
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        # Compare the centre so simplification can trim the outline.
+        self.assertAlmostEqual((min(xs) + max(xs)) / 2, 2426.2, delta=8)
+        self.assertAlmostEqual((min(ys) + max(ys)) / 2, 2033.7, delta=8)
+
     def test_land_and_places_exist_at_world_and_city_scale(self):
         world = self.reader.get(0, 0, 0)
         self.assertIsNotNone(world)

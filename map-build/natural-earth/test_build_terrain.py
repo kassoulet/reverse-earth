@@ -62,6 +62,26 @@ class RasterTests(unittest.TestCase):
         self.assertEqual(int(warped[2, 0]), 255)
         self.assertLess(int(warped[0, 0]), int(warped[2, 0]))
 
+    def test_mercator_output_is_square(self):
+        # Web Mercator is square; a 2:1 plate carrée-sized output would only
+        # fill the top half of every zoom level.
+        self.assertEqual(terrain.OUTPUT_WIDTH, terrain.OUTPUT_HEIGHT)
+
+    def test_south_up_copy_is_a_vertical_flip_of_north_up(self):
+        north = Image.fromarray(
+            np.array([[255, 0], [0, 255]], dtype=np.uint8)
+        )
+        copies = terrain.orientation_copies(north)
+        self.assertIs(copies["north"], north)
+        flipped = np.asarray(copies["south"])
+        self.assertEqual(int(flipped[0, 0]), 0)
+        self.assertEqual(int(flipped[1, 0]), 255)
+
+    def test_encode_tile_rejects_a_non_square_image(self):
+        image = Image.new("RGBA", (4, 2), (0, 0, 0, 0))
+        with self.assertRaises(ValueError):
+            terrain.encode_tile(image, 0, 0, 0)
+
 
 @unittest.skipUnless(
     (ARCHIVE_DIR / "hillshade-south.pmtiles").exists(),
@@ -87,6 +107,17 @@ class TerrainArchiveTests(unittest.TestCase):
                     self.assertIsNotNone(tile)
                     image = Image.open(io.BytesIO(tile))
                     self.assertEqual(image.size, (terrain.TILE_SIZE, terrain.TILE_SIZE))
+
+    def test_overlays_cover_both_world_hemispheres(self):
+        for name in ("hillshade-south.pmtiles", "forest-south.pmtiles"):
+            with self.subTest(name=name):
+                with (ARCHIVE_DIR / name).open("rb") as handle:
+                    reader = Reader(MmapSource(handle))
+                    for x in (0, 1):
+                        # At z1 row 1 is the lower half of display space; it
+                        # used to be entirely empty because the warped image
+                        # was only half as tall as the Mercator world.
+                        self.assertIsNotNone(reader.get(1, x, 1))
 
 
 if __name__ == "__main__":

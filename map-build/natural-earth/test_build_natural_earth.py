@@ -107,6 +107,31 @@ class TileEncodingTests(unittest.TestCase):
         point = decoded["place"]["features"][0]
         self.assertEqual(point["properties"]["name"], "Test")
 
+    def test_tile_geometry_keeps_its_display_position(self):
+        # A feature at 1000–2000 px in the z6 reference world must land at
+        # 250–500 MVT units in the z0 tile. Using the buffered clip box as the
+        # transform origin would shift it by another 64 units.
+        sources = {layer: ([], None) for layer in build.LAYER_ORDER}
+        land = build.Feature(
+            geometry=square(1000, 1000, 1000),
+            properties={"class": "land"},
+        )
+        sources["land"] = ([land], STRtree([land.geometry]))
+
+        data, _ = build.encode_tile(sources, 0, 0, 0)
+        self.assertIsNotNone(data)
+        decoded = mapbox_vector_tile.decode(
+            gzip.decompress(data), default_options={"y_coord_down": True}
+        )
+        geometry = decoded["land"]["features"][0]["geometry"]
+        points = geometry["coordinates"][0]
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        self.assertAlmostEqual(min(xs), 250, delta=3)
+        self.assertAlmostEqual(max(xs), 500, delta=3)
+        self.assertAlmostEqual(min(ys), 250, delta=3)
+        self.assertAlmostEqual(max(ys), 500, delta=3)
+
 
 class OptionalDetailTests(unittest.TestCase):
     def test_admin1_boundaries_keep_their_own_kind(self):

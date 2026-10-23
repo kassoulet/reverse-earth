@@ -9,11 +9,11 @@ Two Natural Earth rasters feed this builder:
 * ``NE1_LR_LC`` is the Natural Earth I land-cover image. Its dark-green forest
   areas become a transparent green wash.
 
-The source rasters are plate carrée. Both are warped to Web Mercator, split
-into 256 px XYZ tiles and written to PMTiles. A south-up copy is made by
-flipping the north-up image vertically, so the overlay registers with the
-south-up vector archive without a runtime transform. North-up copies are
-provided for the comparison view.
+The source rasters are plate carrée. Both are warped to a square Web Mercator
+world, split into 256 px XYZ tiles and written to PMTiles. A south-up copy is
+made by flipping the north-up image vertically, so the overlay registers with
+the south-up vector archive without a runtime transform. The north-up copy is
+the warped image unchanged.
 
 This is a raster companion to ``build_natural_earth.py``, not a replacement:
 the vector archive carries geometry, labels and click targets, while these
@@ -46,8 +46,11 @@ Image.MAX_IMAGE_PIXELS = None
 NE_RASTER_BASE = "https://naciscdn.org/naturalearth/10m/raster"
 TILE_SIZE = 256
 MAX_ZOOM = 5
+# A Web Mercator world is square, unlike the 2:1 plate carrée source rasters.
+# Keep both dimensions equal or the overlays are squeezed into one half of the
+# tile grid and stop registering with the vector archive.
 OUTPUT_WIDTH = 8192
-OUTPUT_HEIGHT = 4096
+OUTPUT_HEIGHT = OUTPUT_WIDTH
 
 # Pinned Natural Earth raster downloads. The zips are build-time inputs and are
 # cached outside git, like the vector GeoJSON sources.
@@ -172,7 +175,24 @@ def forest_image(source: Image.Image) -> Image.Image:
     return Image.fromarray(output)
 
 
+def orientation_copies(image: Image.Image) -> dict[str, Image.Image]:
+    """Return the north-up and south-up images for the tile grids.
+
+    ``image`` is already north-up because the Mercator warp keeps the source
+    row order. South-up display space inverts latitude, so its copy is the
+    north-up image flipped top to bottom.
+    """
+    return {
+        "north": image,
+        "south": image.transpose(Image.Transpose.FLIP_TOP_BOTTOM),
+    }
+
+
 def encode_tile(image: Image.Image, zoom: int, x: int, y: int) -> bytes | None:
+    if image.width != image.height:
+        raise ValueError(
+            "overlay images must be square to cover the Web Mercator world"
+        )
     world = TILE_SIZE * (2**zoom)
     scale = image.width / world
     left = x * TILE_SIZE * scale
@@ -285,44 +305,31 @@ def build(
 
     started = time.monotonic()
     sources = fetch_sources(cache_dir)
-    LOG.info("Warping %s to Web Mercator", sources["SR_HR.zip"].name)
-    relief = warp_to_mercator(
-        Image.open(sources["SR_HR.zip"]), OUTPUT_WIDTH, OUTPUT_HEIGHT
-    )
-    LOG.info("Warping %s to Web Mercator", sources["NE1_LR_LC.zip"].name)
-    land_cover = warp_to_mercator(
-        Image.open(sources["NE1_LR_LC.zip"]), OUTPUT_WIDTH, OUTPUT_HEIGHT
-    )
-
-    hillshade = hillshade_image(relief)
-    forest = forest_image(land_cover)
-    overlays = [
-        ("hillshade", hillshade, "Reverse Earth hillshade"),
-        (
-            "hillshade",
-            hillshade.transpose(Image.Transpose.FLIP_TOP_BOTTOM),
-            "Reverse Earth hillshade",
-        ),
-        ("forest", forest, "Reverse Earth forest cover"),
-        (
-            "forest",
-            forest.transpose(Image.Transpose.FLIP_TOP_BOTTOM),
-            "Reverse Earth forest cover",
-        ),
-    ]
 
     report: list[dict[str, Any]] = []
-    for index, (kind, image, name) in enumerate(overlays):
-        orientation = "south" if index % 2 == 0 else "north"
-        report.append(
-            write_archive(
-                image,
-                output_dir / f"{kind}-{orientation}.pmtiles",
-                name=name,
-                maxzoom=maxzoom,
-                south_up=orientation == "south",
-            )
+    for kind, source_name, convert, name in (
+        ("hillshade", "SR_HR.zip", hillshade_image, "Reverse Earth hillshade"),
+        ("forest", "NE1_LR_LC.zip", forest_image, "Reverse Earth forest cover"),
+    ):
+        LOG.info("Warping %s to Web Mercator", sources[source_name].name)
+        warped = warp_to_mercator(
+            Image.open(sources[source_name]), OUTPUT_WIDTH, OUTPUT_HEIGHT
         )
+        image = convert(warped)
+        del warped
+
+        # Write each source one at a time so the two full-size warped images
+        # and their RGBA copies are never resident together.
+        for orientation, oriented in orientation_copies(image).items():
+            report.append(
+                write_archive(
+                    oriented,
+                    output_dir / f"{kind}-{orientation}.pmtiles",
+                    name=name,
+                    maxzoom=maxzoom,
+                    south_up=orientation == "south",
+                )
+            )
 
     total_bytes = sum(item["bytes"] for item in report)
     return {
