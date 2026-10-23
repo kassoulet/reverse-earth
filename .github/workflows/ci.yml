@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: map-build/requirements.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install transform dependencies
+        run: python -m pip install -r map-build/requirements.txt
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Coordinate API tests
+        run: npm test
+
+      - name: Geometry transform tests
+        env:
+          PYTHONHASHSEED: "0"
+        run: python -m unittest discover -s map-build/transformations -p "test_*.py" -v
+
+      - name: Build static site
+        run: npm run build
+
+      - name: Check deployment budget (archive optional in CI)
+        run: node map-build/scripts/check-size.mjs dist

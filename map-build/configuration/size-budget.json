@@ -1,0 +1,6 @@
+{
+  "maxArchiveBytes": 850000000,
+  "maxDeployBytes": 900000000,
+  "hardDeployBytes": 1000000000,
+  "archiveRelativePath": "data/world.pmtiles"
+}

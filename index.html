@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f3f0e9" />
+    <meta
+      name="description"
+      content="A south-up world map: south is up, north is down, east and west stay where they belong."
+    />
+    <title>South Is Up — upside-down world map</title>
+  </head>
+  <body>
+    <main id="app">
+      <div
+        id="map"
+        aria-label="World map with south at the top and north at the bottom"
+      ></div>
+
+      <div class="orientation" title="Geographic north points down">
+        <span class="orientation__arrow" aria-hidden="true">↑</span>
+        <span>South is up</span>
+      </div>
+
+      <nav id="zoom-controls" class="zoom-controls" aria-label="Zoom">
+        <button
+          id="zoom-in"
+          class="zoom-button"
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          id="zoom-out"
+          class="zoom-button"
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          −
+        </button>
+      </nav>
+
+      <div id="loading" class="loading" role="status">
+        <span class="loading__spinner" aria-hidden="true"></span>
+        <span>Loading map…</span>
+      </div>
+
+      <section
+        id="data-state"
+        class="data-state"
+        role="alertdialog"
+        aria-labelledby="data-state-title"
+        hidden
+      >
+        <div class="data-state__card">
+          <p class="data-state__eyebrow">Static build</p>
+          <h1 id="data-state-title">Map data not built yet</h1>
+          <p id="data-state-message" class="data-state__message"></p>
+          <pre id="data-state-command" class="data-state__command" hidden></pre>
+          <dl class="data-state__facts">
+            <dt>Expected archive</dt>
+            <dd><code id="data-state-url"></code></dd>
+            <dt>Build instructions</dt>
+            <dd><code>map-build/README.md</code></dd>
+          </dl>
+          <button id="retry" class="button" type="button">Check again</button>
+        </div>
+      </section>
+
+      <noscript>
+        <div class="noscript">
+          This map needs JavaScript. The application itself is fully static: it
+          reads a PMTiles archive directly from this site.
+        </div>
+      </noscript>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

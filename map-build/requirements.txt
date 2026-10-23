@@ -1,0 +1,4 @@
+# Python 3.10+; tested with 3.14.
+pmtiles==3.8.1
+mapbox-vector-tile==2.2.0
+shapely==2.2.0

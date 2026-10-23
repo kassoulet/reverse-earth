@@ -1,0 +1,32 @@
+# Node / Vite
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Map build inputs and intermediate artifacts (never commit these)
+map-build/.work/
+map-build/.venv/
+map-build/data/
+map-build/.cache/
+
+# Planetiler's default download directory when run manually
+/data/
+*.osm.pbf
+*.osm.pbf.part
+*.mbtiles
+*.mbtiles-journal
+*.pmtiles
+public/data/*.pmtiles
+!public/data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
