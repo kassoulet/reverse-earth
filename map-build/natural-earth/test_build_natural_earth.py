@@ -127,6 +127,33 @@ class OptionalDetailTests(unittest.TestCase):
         self.assertEqual(feature.properties["admin0"], "Germany")
         self.assertEqual(feature.min_zoom, 5)
 
+    def test_admin1_boundaries_are_sparse_at_z4(self):
+        features = [
+            build.Feature(
+                geometry=Point(0, 0),
+                properties={"kind": "admin1"},
+                min_zoom=min_zoom,
+            )
+            for min_zoom in (2, 4, 6)
+        ]
+        source = build.PreparedSource(
+            layer="boundary", scale="10m", variant="admin1", features=features
+        )
+        self.assertEqual(
+            [feature.min_zoom for feature in build.filtered_features(source, 4)],
+            [2, 4],
+        )
+        self.assertEqual(
+            [feature.min_zoom for feature in build.filtered_features(source, 5)],
+            [2, 4, 6],
+        )
+
+    def test_admin1_labels_gain_detail_with_zoom(self):
+        self.assertEqual(build.admin1_label_min_zoom(0), 4)
+        self.assertEqual(build.admin1_label_min_zoom(2), 5)
+        self.assertEqual(build.admin1_label_min_zoom(3), 6)
+        self.assertEqual(build.admin1_label_min_zoom(5), 6)
+
     def test_roads_are_filtered_by_zoom_and_class(self):
         features = [
             build.Feature(

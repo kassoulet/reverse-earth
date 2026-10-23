@@ -206,17 +206,41 @@
             <span class="legend__swatch legend__swatch--glacier" aria-hidden="true"></span>
             <span><strong>Glacier</strong><small>Ice sheets and glaciers</small></span>
           </li>
-          <li>
-            <span class="legend__swatch legend__swatch--terrain" aria-hidden="true"></span>
-            <span><strong>Terrain</strong><small>Shaded relief and hillshade</small></span>
+          <li class="legend__row--toggle">
+            <label class="legend__toggle-label" for="overlay-hillshade">
+              <span class="legend__swatch legend__swatch--terrain" aria-hidden="true"></span>
+              <span><strong>Terrain</strong><small>Shaded relief and hillshade</small></span>
+            </label>
+            <input
+              id="overlay-hillshade"
+              class="legend__checkbox"
+              type="checkbox"
+              checked
+            />
           </li>
-          <li>
-            <span class="legend__swatch legend__swatch--forest" aria-hidden="true"></span>
-            <span><strong>Forest</strong><small>Natural Earth land cover</small></span>
+          <li class="legend__row--toggle">
+            <label class="legend__toggle-label" for="overlay-forest">
+              <span class="legend__swatch legend__swatch--forest" aria-hidden="true"></span>
+              <span><strong>Forest</strong><small>Natural Earth land cover</small></span>
+            </label>
+            <input
+              id="overlay-forest"
+              class="legend__checkbox"
+              type="checkbox"
+              checked
+            />
           </li>
-          <li>
-            <span class="legend__swatch legend__swatch--wetland" aria-hidden="true"></span>
-            <span><strong>Wetland</strong><small>Named wetland areas</small></span>
+          <li class="legend__row--toggle">
+            <label class="legend__toggle-label" for="overlay-wetland">
+              <span class="legend__swatch legend__swatch--wetland" aria-hidden="true"></span>
+              <span><strong>Wetland</strong><small>Named wetland areas</small></span>
+            </label>
+            <input
+              id="overlay-wetland"
+              class="legend__checkbox"
+              type="checkbox"
+              checked
+            />
           </li>
           <li>
             <span class="legend__swatch legend__swatch--marine" aria-hidden="true">Aa</span>

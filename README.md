@@ -56,12 +56,13 @@ published, the viewer shows a clear “Map data not built yet” panel.
   overzoom.
 - Progressive detail: land, ice sheets, lakes, ocean/sea labels and physical
   region labels at world scale, country boundaries, rivers, capitals, cities
-  and towns as you zoom in. Named lakes and rivers appear from z4. At z5–z6
-  the map also adds coral reefs, urban areas, parks, airports, ports, named
-  mountain peaks, selected Admin 1 boundaries, a denser road and railway
-  network, and ranked Admin 1 labels at z6. A transparent hillshade and forest
-  cover are drawn from z0–z5, with named wetland polygons from Natural Earth at
-  every zoom.
+  and towns as you zoom in. Named lakes and rivers appear from z4. The
+  highest-ranked Admin 1 boundaries and labels also appear at z4, with more
+  labels joining at z5. At z5–z6 the map adds coral reefs, urban areas, parks,
+  airports, ports, named mountain peaks, a denser road and railway network,
+  and the fuller Admin 1 boundary and label selection. A transparent hillshade
+  and forest cover are drawn from z0–z5, with named wetland polygons from
+  Natural Earth at every zoom.
 - Style in [`public/style.json`](public/style.json): warm land, blue water,
   muted country borders and a compact place-label hierarchy.
 - Self-hosted Noto Sans glyphs; no runtime CDN dependency.
@@ -71,7 +72,8 @@ published, the viewer shows a clear “Map data not built yet” panel.
 - An information control explains the orientation, the data source and the
   coordinate contract.
 - A legend control beside the information button explains the ice, terrain,
-  forest, wetland, ocean and sea, physical region, and peak layers.
+  forest, wetland, ocean and sea, physical region, and peak layers, and toggles
+  the terrain, forest, and wetland layers on and off.
 - A share control in the top-right controls sends the current view with the
   native share sheet where available and copies the URL to the clipboard
   otherwise. The share text names a nearby rendered city, town, region or
@@ -218,7 +220,7 @@ The builder is deliberately database-free:
 - Terrain overlays: shaded relief and a land-cover forest mask, warped to Web
   Mercator and written as south-up and north-up WebP PMTiles at z0–z5.
 - Admin 1 label anchors use Natural Earth's `min_label`/`labelrank` hints, so
-  the z6 set stays bounded instead of showing every subdivision.
+  the z4–z6 set grows gradually instead of showing every subdivision.
 - PMTiles metadata records `south_up=true`, the transform and the source commit.
 
 See [`map-build/README.md`](map-build/README.md) for the layer schema and
@@ -256,9 +258,10 @@ archives (when present), the hillshade/forest masks and the optional MVT
 latitude-flip transform. The browser smoke test checks the splash background and its
 indeterminate progress bar, then starts the built site in headless Chrome and
 asserts that the z6 Admin 1 boundaries, urban areas, parks, airports, roads,
-railways and region labels are actually rendered, then switches to north-up and
-back, and exercises keyboard selection of both a place result and a coordinate
-result. It also checks that the share control passes the current URL to the
+railways and region labels are actually rendered, checks the selected Admin 1
+boundaries and labels at z4, toggles the terrain, forest and wetland layers,
+then switches to north-up and back, and exercises keyboard selection of both a
+place result and a coordinate result. It also checks that the share control passes the current URL to the
 native share sheet and, when sharing is unavailable, copies it to the
 clipboard, and that the share text names the nearby place. Click-to-inspect
 cards are opened for a place, airport, park, port, ocean/sea label, physical

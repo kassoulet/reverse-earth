@@ -176,43 +176,75 @@ class ArchiveTests(unittest.TestCase):
             all(feature["properties"].get("rank", 99) <= 7 for feature in railways)
         )
 
-    def test_admin1_labels_appear_only_at_z6(self):
-        z6_x, z6_y = tile_for(-105.543, 38.9998, 6)
-        z6_tile = self.reader.get(6, z6_x, z6_y)
-        self.assertIsNotNone(z6_tile)
-        z6_places = mapbox_vector_tile.decode(gzip.decompress(z6_tile))["place"]["features"]
-        region_names = {
+    def test_admin1_labels_gain_detail_from_z4(self):
+        z4_x, z4_y = tile_for(-105.543, 38.9998, 4)
+        z4_tile = self.reader.get(4, z4_x, z4_y)
+        self.assertIsNotNone(z4_tile)
+        z4_decoded = mapbox_vector_tile.decode(gzip.decompress(z4_tile))
+        z4_regions = {
             feature["properties"].get("name")
-            for feature in z6_places
+            for feature in z4_decoded.get("place", {}).get("features", [])
             if feature["properties"].get("kind") == "region"
         }
-        self.assertIn("Colorado", region_names)
-
-        paris_x, paris_y = tile_for(2.3522, 48.8566, 6)
-        paris_tile = self.reader.get(6, paris_x, paris_y)
-        self.assertIsNotNone(paris_tile)
-        paris_places = mapbox_vector_tile.decode(gzip.decompress(paris_tile))["place"][
-            "features"
-        ]
-        paris_regions = {
-            feature["properties"].get("name")
-            for feature in paris_places
-            if feature["properties"].get("kind") == "region"
-        }
-        # France's region labels normally start at z8; the z6 policy is
-        # deliberately broadened for countries like France and Spain.
-        self.assertIn("Yvelines", paris_regions)
+        self.assertIn("Colorado", z4_regions)
+        self.assertIn(
+            "admin1",
+            {
+                feature["properties"].get("kind")
+                for feature in z4_decoded.get("boundary", {}).get("features", [])
+            },
+        )
 
         z5_x, z5_y = tile_for(-105.543, 38.9998, 5)
         z5_tile = self.reader.get(5, z5_x, z5_y)
         self.assertIsNotNone(z5_tile)
-        z5_places = mapbox_vector_tile.decode(gzip.decompress(z5_tile))["place"]["features"]
-        self.assertFalse(
-            any(
-                feature["properties"].get("kind") == "region"
-                for feature in z5_places
-            )
+        z5_regions = {
+            feature["properties"].get("name")
+            for feature in mapbox_vector_tile.decode(gzip.decompress(z5_tile))["place"][
+                "features"
+            ]
+            if feature["properties"].get("kind") == "region"
+        }
+        self.assertIn("Colorado", z5_regions)
+
+        paris_x, paris_y = tile_for(2.3522, 48.8566, 5)
+        paris_tile = self.reader.get(5, paris_x, paris_y)
+        self.assertIsNotNone(paris_tile)
+        paris_regions = {
+            feature["properties"].get("name")
+            for feature in mapbox_vector_tile.decode(gzip.decompress(paris_tile))["place"][
+                "features"
+            ]
+            if feature["properties"].get("kind") == "region"
+        }
+        self.assertNotIn("Yvelines", paris_regions)
+
+        z6_x, z6_y = tile_for(-105.543, 38.9998, 6)
+        z6_tile = self.reader.get(6, z6_x, z6_y)
+        self.assertIsNotNone(z6_tile)
+        z6_places = mapbox_vector_tile.decode(gzip.decompress(z6_tile))["place"]["features"]
+        self.assertIn(
+            "Colorado",
+            {
+                feature["properties"].get("name")
+                for feature in z6_places
+                if feature["properties"].get("kind") == "region"
+            },
         )
+
+        paris_z6_x, paris_z6_y = tile_for(2.3522, 48.8566, 6)
+        paris_z6_tile = self.reader.get(6, paris_z6_x, paris_z6_y)
+        self.assertIsNotNone(paris_z6_tile)
+        paris_z6_regions = {
+            feature["properties"].get("name")
+            for feature in mapbox_vector_tile.decode(gzip.decompress(paris_z6_tile))[
+                "place"
+            ]["features"]
+            if feature["properties"].get("kind") == "region"
+        }
+        # France's region labels normally start at z8; the z6 policy is
+        # deliberately broadened for countries like France and Spain.
+        self.assertIn("Yvelines", paris_z6_regions)
 
     def test_low_zoom_road_and_railway_filters_stay_sparse(self):
         x, y = tile_for(8.6821, 50.1109, 5)

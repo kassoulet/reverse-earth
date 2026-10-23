@@ -108,8 +108,8 @@ minutes on a laptop; the raster warp and WebP encoding are the slower part.
 | Zoom | Natural Earth scale | Content |
 | --- | --- | --- |
 | z0–z2 | 110m | land, major ice sheets, major lakes, ocean names, physical regions, country borders, capitals, country labels |
-| z3–z4 | 50m | more lakes, rivers, boundaries, cities, seas, glaciers and physical regions |
-| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, coral reefs, towns, urban areas, parks, airports, ports, named mountain peaks, selected Admin 1 boundaries, denser roads and railways; selected Admin 1 labels at z6 |
+| z3–z4 | 50m | more lakes, rivers, boundaries, cities, seas, glaciers and physical regions; selected Admin 1 boundaries and labels at z4 |
+| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, coral reefs, towns, urban areas, parks, airports, ports, named mountain peaks, denser roads and railways, and denser Admin 1 boundaries and labels |
 
 Native z0–z6 are mandatory for V1. The viewer allows overzoom to z14; overzoom
 does not duplicate data in the archive.
@@ -136,14 +136,15 @@ does not duplicate data in the archive.
 | `physio` | points | `name`, `class`, `rank` |
 | `peak` | points | `name`, `class`, `elevation`, `rank`, `country` |
 
-Boundary `kind` is `country` or `admin1`; Admin 1 lines appear only at z5–z6
-and carry their parent country in `admin0`. Place `kind` is one of `country`,
-`capital`, `city`, `town` or `region`. Road `class` is `major`, `secondary` or
-`minor` (only selected classes reach the tiles). `disputed` is a boolean.
-`rank` is Natural Earth's scalerank/labelrank; lower is more important.
+Boundary `kind` is `country` or `admin1`; Admin 1 lines appear from z4 and
+carry their parent country in `admin0`. At z4 only lines with `MIN_ZOOM <= 4`
+are emitted, while z5–z6 use the full 10m line set. Place `kind` is one of
+`country`, `capital`, `city`, `town` or `region`. Road `class` is `major`,
+`secondary` or `minor` (only selected classes reach the tiles). `disputed` is a
+boolean. `rank` is Natural Earth's scalerank/labelrank; lower is more important.
 
 The optional detail follows Natural Earth's own `MIN_ZOOM` hints and is
-deliberately filtered: Admin 1 lines with `MIN_ZOOM <= z`; major and secondary
+deliberately filtered: major and secondary
 roads at z5 with local roads added at z6; railways with `scalerank <= 5` at z5
 and `<= 7` at z6; urban areas with `scalerank <= 5` at z5 and `<= 7` at z6;
 airports with `scalerank <= 4` at z5 and `<= 6` at z6; and ports with
@@ -154,10 +155,10 @@ desert, range, plain, plateau, basin and valley labels use the same
 one-zoom-earlier `min_label` rule with a scalerank cap; named wetlands are shown
 at every zoom; coral reefs appear at z5–z6; and mountain peaks appear at z5–z6
 with `scalerank <= 2` at z5 and `<= 3` at z6.
-Admin 1 labels appear only at z6 and
-only when both `min_label <= 9` and `labelrank <= 5`. The label thresholds
-cover countries whose region labels normally start at z7–z8 (for example
-Spain, France and Japan) without opening the map to every county. Airports and
+Admin 1 labels start at z4 with `labelrank 0`, add `labelrank <= 2` at z5, and
+at z6 include `labelrank <= 5` with `min_label <= 9`. The label thresholds cover
+countries whose region labels normally start at z7–z8 (for example Spain,
+France and Japan) without opening the map to every county. Airports and
 ports are Natural Earth's selected global points; the park layer is the US
 National Park Service dataset, so parks only appear in the United States.
 There are no buildings, address data or exhaustive POIs.

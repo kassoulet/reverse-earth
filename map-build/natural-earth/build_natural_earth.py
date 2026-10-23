@@ -213,9 +213,13 @@ RIVER_RANK_BY_ZOOM = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7}
 COUNTRY_LABEL_RANK_BY_ZOOM = {0: 2, 1: 2, 2: 3, 3: 3, 4: 4, 5: 4, 6: 5}
 
 # Optional 1:10m detail. Natural Earth's own minimum-zoom hints keep these
-# sparse enough for a z5-z6 basemap; the whole 10m dataset is never emitted.
-ADMIN1_MIN_ZOOM = 5
-ADMIN1_LABEL_MIN_ZOOM = 6
+# sparse enough for a z4-z6 basemap; the whole 10m dataset is never emitted.
+# At z4 only the highest-ranked regions survive, so the world view gains a few
+# continental-scale subdivisions without turning into a county map.
+ADMIN1_MIN_ZOOM = 4
+ADMIN1_BOUNDARY_MIN_ZOOM = 4
+ADMIN1_LABEL_MIN_ZOOM = 4
+ADMIN1_LABEL_RANK_BY_ZOOM = {4: 0, 5: 2, 6: 5}
 ADMIN1_LABEL_MAX_MIN_LABEL = 9
 ADMIN1_LABEL_MAX_RANK = 5
 ROAD_MIN_ZOOM = 5
@@ -880,13 +884,28 @@ def wetland_areas(cache_dir: Path) -> PreparedSource:
     return prepared
 
 
+def admin1_label_min_zoom(rank: float) -> int:
+    """Return the first zoom at which an Admin 1 label earns its place.
+
+    Rank 0 regions are the handful that make sense at z4; rank 1-2 regions join
+    at z5, and the broader z6 set waits until the map is detailed enough to
+    separate them.
+    """
+    if rank <= ADMIN1_LABEL_RANK_BY_ZOOM[4]:
+        return 4
+    if rank <= ADMIN1_LABEL_RANK_BY_ZOOM[5]:
+        return 5
+    return 6
+
+
 def admin1_labels(cache_dir: Path) -> list[Feature]:
     """Pick a small, globally distributed set of Admin 1 label anchors.
 
-    Natural Earth's ``min_label``/``labelrank`` are cartographic hints. At z6
-    only large or important regions qualify, so the map does not fill up with
-    counties and départements. Label glyphs are never transformed; only the
-    anchor coordinate is negated into display space.
+    Natural Earth's ``min_label``/``labelrank`` are cartographic hints. At z4
+    only the largest regions qualify, with more joining at z5 and the full
+    selected set at z6, so the map does not fill up with counties and
+    départements. Label glyphs are never transformed; only the anchor
+    coordinate is negated into display space.
     """
     features: list[Feature] = []
     for raw in load_geojson(cache_dir / "ne_10m_admin_1_states_provinces.geojson"):
@@ -918,7 +937,7 @@ def admin1_labels(cache_dir: Path) -> list[Feature]:
                 },
                 kind="region",
                 rank=rank,
-                min_zoom=ADMIN1_LABEL_MIN_ZOOM,
+                min_zoom=admin1_label_min_zoom(rank),
             )
         )
     return features
@@ -946,6 +965,10 @@ def place_visible(feature: Feature, zoom: int) -> bool:
 
 def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
     if source.layer == "land":
+        return source.features
+    if source.layer == "boundary" and source.variant == "admin1":
+        if zoom <= ADMIN1_BOUNDARY_MIN_ZOOM:
+            return [feature for feature in source.features if feature.min_zoom <= zoom]
         return source.features
     if source.layer == "boundary":
         return [feature for feature in source.features if feature.min_zoom <= zoom]
@@ -1085,7 +1108,11 @@ def prepare_zoom_sources(
         if feature.rank <= label_limit
     )
     if zoom >= ADMIN1_LABEL_MIN_ZOOM:
-        places.extend(loaded[("admin1-labels", "10m")].features)
+        places.extend(
+            feature
+            for feature in loaded[("admin1-labels", "10m")].features
+            if feature.min_zoom <= zoom
+        )
     result["place"] = (places, STRtree([feature.geometry for feature in places]))
     return result
 

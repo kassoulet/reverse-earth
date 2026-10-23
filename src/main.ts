@@ -59,6 +59,15 @@ const infoClose = requireElement<HTMLButtonElement>("info-close");
 const legendButton = requireElement<HTMLButtonElement>("legend-button");
 const legendPanel = requireElement<HTMLElement>("legend-panel");
 const legendClose = requireElement<HTMLButtonElement>("legend-close");
+
+const OVERLAY_LAYER_IDS = ["hillshade", "forest", "wetland"] as const;
+type OverlayLayerId = (typeof OVERLAY_LAYER_IDS)[number];
+
+const overlayToggles: Record<OverlayLayerId, HTMLInputElement> = {
+  hillshade: requireElement<HTMLInputElement>("overlay-hillshade"),
+  forest: requireElement<HTMLInputElement>("overlay-forest"),
+  wetland: requireElement<HTMLInputElement>("overlay-wetland"),
+};
 const featureCard = requireElement<HTMLElement>("feature-card");
 const featureCardClose = requireElement<HTMLButtonElement>("feature-card-close");
 const featureCardEyebrow = requireElement<HTMLElement>("feature-card-eyebrow");
@@ -162,6 +171,18 @@ function updateOrientationUI(): void {
       ? "World map with south at the top and north at the bottom"
       : "World map with north at the top and south at the bottom",
   );
+}
+
+function applyOverlayVisibility(): void {
+  if (!map) return;
+  for (const layerId of OVERLAY_LAYER_IDS) {
+    if (!map.getLayer(layerId)) continue;
+    map.setLayoutProperty(
+      layerId,
+      "visibility",
+      overlayToggles[layerId].checked ? "visible" : "none",
+    );
+  }
 }
 
 function showDataState(
@@ -507,6 +528,8 @@ async function boot(): Promise<void> {
     baseStyle = style;
     map = createMap(mapContainer, opened, style, orientation);
     exposeDebugMap(map);
+    map.on("style.load", applyOverlayVisibility);
+    applyOverlayVisibility();
     if (initialState.view) {
       map.jumpTo({
         center: viewCenter(initialState.view, orientation),
@@ -618,6 +641,10 @@ function setLegendOpen(open: boolean, restoreFocus = false): void {
   } else if (restoreFocus) {
     legendButton.focus({ preventScroll: true });
   }
+}
+
+for (const layerId of OVERLAY_LAYER_IDS) {
+  overlayToggles[layerId].addEventListener("change", applyOverlayVisibility);
 }
 
 infoButton.addEventListener("click", () => {

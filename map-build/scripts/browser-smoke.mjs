@@ -521,6 +521,12 @@ async function run() {
           entries: [...panel.querySelectorAll(".legend strong")].map(
             (entry) => entry.textContent ?? "",
           ),
+          toggles: [...panel.querySelectorAll(".legend__checkbox")].map(
+            (input) => ({
+              id: input.id,
+              checked: input instanceof HTMLInputElement && input.checked,
+            }),
+          ),
         };
       })()`,
       "legend panel",
@@ -541,6 +547,57 @@ async function run() {
     ) {
       fail(`Unexpected legend contents: ${JSON.stringify(legend)}`);
     }
+    const toggleIds = [
+      "overlay-hillshade",
+      "overlay-forest",
+      "overlay-wetland",
+    ];
+    if (
+      legend.toggles.length !== toggleIds.length ||
+      !toggleIds.every((id) =>
+        legend.toggles.some((toggle) => toggle.id === id && toggle.checked),
+      )
+    ) {
+      fail(`Unexpected overlay toggles: ${JSON.stringify(legend.toggles)}`);
+    }
+
+    const toggled = await cdp.evaluate(`(() => {
+      const map = window.__southUpMap;
+      if (!map || !map.loaded()) return null;
+      const pairs = [
+        ["hillshade", "overlay-hillshade"],
+        ["forest", "overlay-forest"],
+        ["wetland", "overlay-wetland"],
+      ];
+      const before = pairs.map(
+        ([layer]) => map.getLayoutProperty(layer, "visibility") ?? "visible",
+      );
+      for (const [, id] of pairs) {
+        const input = document.getElementById(id);
+        if (!(input instanceof HTMLInputElement) || !input.checked) return null;
+        input.click();
+      }
+      const hidden = pairs.map(
+        ([layer]) => map.getLayoutProperty(layer, "visibility") ?? "visible",
+      );
+      for (const [, id] of pairs) document.getElementById(id)?.click();
+      const restored = pairs.map(
+        ([layer]) => map.getLayoutProperty(layer, "visibility") ?? "visible",
+      );
+      // Leave wetlands hidden across the orientation switch to prove the
+      // legend state survives a new style, then restore it below.
+      document.getElementById("overlay-wetland")?.click();
+      return { before, hidden, restored };
+    })()`);
+    if (!toggled) fail("Could not exercise the overlay toggles.");
+    const noBlank = (values) => values.every((value) => value !== "none");
+    if (!noBlank(toggled.before) || !noBlank(toggled.restored)) {
+      fail(`Overlay layers were not initially visible: ${JSON.stringify(toggled)}`);
+    }
+    if (!toggled.hidden.every((value) => value === "none")) {
+      fail(`Overlay toggles did not hide their layers: ${JSON.stringify(toggled)}`);
+    }
+
     await cdp.evaluate('document.querySelector("#legend-close")?.click()');
     await cdp.waitFor(
       'document.querySelector("#legend-panel")?.hidden === true && document.querySelector("#legend-button")?.getAttribute("aria-expanded") === "false"',
@@ -643,6 +700,7 @@ async function run() {
           roads,
           railway: map.queryRenderedFeatures({ layers: ["railway"] }).length,
           overlays: true,
+          wetlandVisibility: map.getLayoutProperty("wetland", "visibility") ?? "visible",
         };
       })()`,
       "north-up view",
@@ -655,6 +713,9 @@ async function run() {
       fail("North-up map label is missing.");
     }
     if (northUp.railway === 0) fail("North-up view rendered no railways.");
+    if (northUp.wetlandVisibility !== "none") {
+      fail("The wetland toggle did not survive the north-up style switch.");
+    }
     const northUrl = await cdp.waitFor(
       `(() => {
         const state = ${URL_STATE_EXPRESSION};
@@ -687,6 +748,7 @@ async function run() {
           southPressed: document.querySelector("#orientation-south")?.getAttribute("aria-pressed"),
           northPressed: document.querySelector("#orientation-north")?.getAttribute("aria-pressed"),
           roads,
+          wetlandVisibility: map.getLayoutProperty("wetland", "visibility") ?? "visible",
         };
       })()`,
       "south-up view restored",
@@ -695,6 +757,22 @@ async function run() {
     if (southUp.southPressed !== "true" || southUp.northPressed !== "false") {
       fail("South-up orientation controls did not update after switching back.");
     }
+    if (southUp.wetlandVisibility !== "none") {
+      fail("The wetland toggle did not survive the south-up style switch.");
+    }
+    await cdp.evaluate('document.querySelector("#overlay-wetland")?.click()');
+    const wetlandRestored = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        const input = document.querySelector("#overlay-wetland");
+        if (!map || !(input instanceof HTMLInputElement)) return null;
+        const visibility = map.getLayoutProperty("wetland", "visibility") ?? "visible";
+        return visibility === "none" || !input.checked ? null : visibility;
+      })()`,
+      "wetland visibility restored",
+      3_000,
+    );
+    if (wetlandRestored === "none") fail("The wetland toggle did not restore.");
     const southUrl = await cdp.waitFor(
       `(() => {
         const state = ${URL_STATE_EXPRESSION};
@@ -708,6 +786,30 @@ async function run() {
       Math.abs(southUrl.longitude + 105.543) > 0.05
     ) {
       fail(`South-up URL did not preserve real coordinates: ${JSON.stringify(southUrl)}`);
+    }
+
+    await cdp.evaluate(`(() => {
+      const map = window.__southUpMap;
+      if (!map) return false;
+      map.jumpTo({ center: [-105.543, -38.9998], zoom: 4 });
+      return true;
+    })()`);
+    const lowZoom = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded() || Math.abs(map.getZoom() - 4) > 0.01) return null;
+        const boundaries = map.queryRenderedFeatures({
+          layers: ["boundary-admin1"],
+        }).length;
+        const regions = map.queryRenderedFeatures({ layers: ["place-region"] }).length;
+        if (boundaries === 0 || regions === 0) return null;
+        return { boundaries, regions };
+      })()`,
+      "z4 Admin 1 boundaries and labels",
+      20_000,
+    );
+    if (lowZoom.boundaries === 0 || lowZoom.regions === 0) {
+      fail(`The z4 Admin 1 selection is empty: ${JSON.stringify(lowZoom)}`);
     }
 
     const setSearchValue = async (value) => {

@@ -265,6 +265,33 @@ body {
   align-items: start;
 }
 
+.legend li.legend__row--toggle {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.legend__toggle-label {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: start;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.legend__checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.legend__checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .legend__swatch {
   display: grid;
   place-items: center;
