@@ -20,9 +20,9 @@ import {
   constants as fsConstants,
   existsSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -127,6 +127,50 @@ async function waitForHttp(url, timeoutMs) {
     await sleep(200);
   }
   fail(`Timed out waiting for ${url}`);
+}
+
+function freePort() {
+  return new Promise((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once("error", rejectPort);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolvePort(port));
+    });
+  });
+}
+
+async function waitForDevTools(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (response.ok) return true;
+    } catch {
+      // Chrome is still creating its debugging endpoint.
+    }
+    await sleep(200);
+  }
+  return false;
+}
+
+async function findPageTarget(port) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try {
+      const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+      const page =
+        targets.find(
+          (target) => target.type === "page" && target.url === "about:blank",
+        ) ?? targets.find((target) => target.type === "page");
+      if (page?.webSocketDebuggerUrl) return page;
+    } catch {
+      // The page target may not be listed yet.
+    }
+    await sleep(200);
+  }
+  return undefined;
 }
 
 function connectCdp(webSocketUrl) {
@@ -258,45 +302,64 @@ async function run() {
     previewLog += chunk;
   });
 
-  const profile = mkdtempSync(join(tmpdir(), "south-up-smoke-"));
+  const profiles = [];
   let chrome;
   let cdp;
+  let chromeLog = "";
 
   try {
     await waitForHttp(BASE_URL, 20_000);
 
-    chrome = spawn(
-      findChrome(),
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--use-angle=swiftshader-webgl",
-        "--remote-debugging-port=0",
-        `--user-data-dir=${profile}`,
-        "--window-size=1280,900",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "about:blank",
-      ],
-      { stdio: "ignore" },
-    );
+    const chromePath = findChrome();
+    let debugPort;
+    for (let attempt = 1; attempt <= 2 && !debugPort; attempt += 1) {
+      const profile = mkdtempSync(join(tmpdir(), "south-up-smoke-"));
+      profiles.push(profile);
+      const port = await freePort();
+      const child = spawn(
+        chromePath,
+        [
+          "--headless=new",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-extensions",
+          "--no-sandbox",
+          "--use-angle=swiftshader-webgl",
+          `--remote-debugging-port=${port}`,
+          `--user-data-dir=${profile}`,
+          "--window-size=1280,900",
+          "--no-first-run",
+          "--no-default-browser-check",
+          "about:blank",
+        ],
+        { stdio: ["ignore", "ignore", "pipe"] },
+      );
+      child.stderr?.on("data", (chunk) => {
+        chromeLog += chunk;
+      });
+      chrome = child;
 
-    const portFile = join(profile, "DevToolsActivePort");
-    const portDeadline = Date.now() + 15_000;
-    while (!existsSync(portFile) && Date.now() < portDeadline) {
-      await sleep(100);
-    }
-    if (!existsSync(portFile)) {
-      fail(`Chrome did not expose a DevTools port. Preview log:\n${previewLog}`);
-    }
-    const debugPort = Number(readFileSync(portFile, "utf8").split("\n")[0]);
+      if (await waitForDevTools(port, 15_000)) {
+        debugPort = port;
+        break;
+      }
 
-    const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json();
-    const page =
-      targets.find((target) => target.type === "page" && target.url === "about:blank") ??
-      targets.find((target) => target.type === "page");
-    if (!page?.webSocketDebuggerUrl) fail("Chrome has no page target.");
+      child.kill("SIGTERM");
+      chrome = undefined;
+      await sleep(300);
+    }
+
+    if (!chrome || !debugPort) {
+      fail(
+        `Chrome did not expose a DevTools port after two attempts.\n` +
+          `Chrome log:\n${chromeLog || "(no stderr)"}\nPreview log:\n${previewLog}`,
+      );
+    }
+
+    const page = await findPageTarget(debugPort);
+    if (!page?.webSocketDebuggerUrl) {
+      fail(`Chrome has no page target. Chrome log:\n${chromeLog}`);
+    }
 
     cdp = connectCdp(page.webSocketDebuggerUrl);
     await cdp.opened;
@@ -1245,11 +1308,13 @@ async function run() {
     chrome?.kill("SIGTERM");
     preview?.kill("SIGTERM");
     await sleep(400);
-    try {
-      rmSync(profile, { recursive: true, force: true });
-    } catch {
-      // Chrome may still be flushing its profile; the temp directory is safe
-      // to leave behind and must not turn a passing test into a failure.
+    for (const profile of profiles) {
+      try {
+        rmSync(profile, { recursive: true, force: true });
+      } catch {
+        // Chrome may still be flushing its profile; the temp directory is safe
+        // to leave behind and must not turn a passing test into a failure.
+      }
     }
   }
 }
