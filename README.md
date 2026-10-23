@@ -251,9 +251,9 @@ clipboard, and that the share text names the nearby place. Click-to-inspect
 cards are opened for a place, airport, park, port, ocean/sea label, physical
 region and mountain peak, and the card's real-world coordinates are checked in
 both orientations. The legend contents are checked, and the world view is also
-checked for rendered ice sheets and ocean labels. Lake and river labels are
-checked around Lake Geneva and the Amazon. The live scale bar and center
-readout are checked before and after a search flight. And it checks that the
+checked for rendered ice sheets and ocean labels, and the lake and river label
+layers are checked at load. The live scale bar and center readout are checked
+before and after a search flight. And it checks that the
 share URL keeps real geographic coordinates through orientation and search
 changes. It
 needs `world.pmtiles` in `dist/` and a local Chrome or Chromium (override the

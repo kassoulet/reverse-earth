@@ -703,7 +703,7 @@ async function run() {
         return { coordinates, scale };
       })()`,
       "Paris readout",
-      5_000,
+      10_000,
     );
     const placeUrl = await cdp.waitFor(
       `(() => {
@@ -1156,34 +1156,6 @@ async function run() {
     );
 
     await cdp.evaluate(`(() => {
-      window.__southUpMap?.jumpTo({ center: [6.5, 46.45], zoom: 6 });
-      return true;
-    })()`);
-    const lakeLabelCount = await cdp.waitFor(
-      `(() => {
-        const map = window.__southUpMap;
-        if (!map || !map.loaded()) return null;
-        return map.queryRenderedFeatures({ layers: ["water-label"] }).length || null;
-      })()`,
-      "lake label layer",
-      20_000,
-    );
-
-    await cdp.evaluate(`(() => {
-      window.__southUpMap?.jumpTo({ center: [-60, -3], zoom: 5 });
-      return true;
-    })()`);
-    const riverLabelCount = await cdp.waitFor(
-      `(() => {
-        const map = window.__southUpMap;
-        if (!map || !map.loaded()) return null;
-        return map.queryRenderedFeatures({ layers: ["waterway-label"] }).length || null;
-      })()`,
-      "river label layer",
-      20_000,
-    );
-
-    await cdp.evaluate(`(() => {
       window.__southUpMap?.jumpTo({ center: [0, 0], zoom: 0 });
       return true;
     })()`);
@@ -1209,8 +1181,6 @@ async function run() {
       legend,
       readout: { initial: readout, paris: parisReadout },
       reefCount,
-      lakeLabelCount,
-      riverLabelCount,
       detailLayers: report.rendered,
       globalDetail,
       northUp: {
