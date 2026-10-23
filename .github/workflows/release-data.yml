@@ -85,9 +85,8 @@ jobs:
               public/data/world.pmtiles.sha256 \
               map-build/.work/natural-earth-report.json \
               --title "Map data $TAG" \
-              --notes "South-up Natural Earth vector archive, native z0-z6. See the attached natural-earth-report.json for the pinned source commit, layer counts and archive size. The pages workflow downloads the world.pmtiles asset from the latest release." \
-              --target "$GITHUB_SHA"
+              --notes "South-up Natural Earth vector archive, native z0-z6. See the attached natural-earth-report.json for the pinned source commit, layer counts and archive size. The pages workflow downloads the world.pmtiles asset from the latest release."
           fi
           gh release edit "$TAG" --latest
-          gh release view "$TAG" --json tagName,name,isLatest,assets \
-            --jq '{tag: .tagName, latest: .isLatest, assets: [.assets[].name]}'
+          gh release view "$TAG" --json tagName,name,assets \
+            --jq '{tag: .tagName, name: .name, assets: [.assets[].name]}'
