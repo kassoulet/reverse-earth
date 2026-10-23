@@ -47,11 +47,16 @@ jobs:
       - name: Cache Natural Earth sources
         uses: actions/cache@v4
         with:
-          path: map-build/.cache/ne
-          key: natural-earth-${{ hashFiles('map-build/natural-earth/build_natural_earth.py') }}
+          path: |
+            map-build/.cache/ne
+            map-build/.cache/ne-raster
+          key: natural-earth-${{ hashFiles('map-build/natural-earth/build_natural_earth.py', 'map-build/natural-earth/build_terrain.py') }}
 
       - name: Build the Natural Earth archive
         run: python map-build/natural-earth/build_natural_earth.py --force --quiet --report map-build/.work/natural-earth-report.json
+
+      - name: Build the terrain overlays
+        run: python map-build/natural-earth/build_terrain.py --force --quiet --report map-build/.work/natural-earth-terrain-report.json
 
       - name: Check the archive against the storage budget
         run: node map-build/scripts/check-size.mjs --archive public/data/world.pmtiles
@@ -60,8 +65,12 @@ jobs:
         run: python -m unittest test_archive -v
         working-directory: map-build/natural-earth
 
-      - name: Write the checksum
-        run: (cd public/data && sha256sum world.pmtiles > world.pmtiles.sha256)
+      - name: Verify the terrain overlays
+        run: python -m unittest test_build_terrain -v
+        working-directory: map-build/natural-earth
+
+      - name: Write the checksums
+        run: (cd public/data && sha256sum *.pmtiles > world.pmtiles.sha256)
 
       - name: Publish the release
         env:
@@ -70,22 +79,31 @@ jobs:
         run: |
           set -euo pipefail
           test -s public/data/world.pmtiles
+          test -s public/data/hillshade-south.pmtiles
+          test -s public/data/hillshade-north.pmtiles
+          test -s public/data/forest-south.pmtiles
+          test -s public/data/forest-north.pmtiles
           test -s public/data/world.pmtiles.sha256
           test -s map-build/.work/natural-earth-report.json
+          test -s map-build/.work/natural-earth-terrain-report.json
+
+          assets=(
+            public/data/world.pmtiles
+            public/data/hillshade-south.pmtiles
+            public/data/hillshade-north.pmtiles
+            public/data/forest-south.pmtiles
+            public/data/forest-north.pmtiles
+            public/data/world.pmtiles.sha256
+            map-build/.work/natural-earth-report.json
+            map-build/.work/natural-earth-terrain-report.json
+          )
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" \
-              public/data/world.pmtiles \
-              public/data/world.pmtiles.sha256 \
-              map-build/.work/natural-earth-report.json \
-              --clobber
+            gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" \
-              public/data/world.pmtiles \
-              public/data/world.pmtiles.sha256 \
-              map-build/.work/natural-earth-report.json \
+            gh release create "$TAG" "${assets[@]}" \
               --title "Map data $TAG" \
-              --notes "Reversed Earth south-up Natural Earth vector archive, native z0-z6. See the attached natural-earth-report.json for the pinned source commit, layer counts and archive size. The pages workflow downloads the world.pmtiles asset from the latest release."
+              --notes "Reverse Earth south-up Natural Earth data: a z0-z6 vector archive plus south-up and north-up hillshade and forest-cover overlays at z0-z5. See the attached reports for pinned sources, layer counts and archive sizes. The pages workflow downloads these assets from the latest release."
           fi
           gh release edit "$TAG" --latest
           gh release view "$TAG" --json tagName,name,assets \

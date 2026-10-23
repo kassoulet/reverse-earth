@@ -11,6 +11,7 @@ EXPECTED_LAYERS = {
     "land",
     "glacier",
     "water",
+    "wetland",
     "reef",
     "urban",
     "park",
@@ -113,6 +114,12 @@ class ArchiveTests(unittest.TestCase):
             for feature in decoded_world.get("marine", {}).get("features", [])
         }
         self.assertIn("North Atlantic Ocean", marine_names)
+
+        wetland_names = {
+            feature["properties"].get("name")
+            for feature in decoded_world.get("wetland", {}).get("features", [])
+        }
+        self.assertIn("Pantanal", wetland_names)
 
         x, y = tile_for(13.0, 23.0, 2)
         sahara = mapbox_vector_tile.decode(

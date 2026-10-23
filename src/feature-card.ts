@@ -12,6 +12,7 @@ export const INSPECT_LAYER_IDS: string[] = [
   "port-dot",
   "port-label",
   "park",
+  "wetland",
   "marine-label",
   "physio-label",
   "peak-dot",
@@ -23,6 +24,7 @@ export type FeatureCategory =
   | "airport"
   | "port"
   | "park"
+  | "wetland"
   | "marine"
   | "physio"
   | "peak";
@@ -49,6 +51,7 @@ const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   airport: "Airport",
   port: "Port",
   park: "Park",
+  wetland: "Wetland",
   marine: "Water body",
   physio: "Physical region",
   peak: "Elevation",
@@ -101,6 +104,7 @@ const FALLBACK_TITLES: Record<FeatureCategory, string> = {
   airport: "Unnamed airport",
   port: "Unnamed port",
   park: "Unnamed park",
+  wetland: "Unnamed wetland",
   marine: "Unnamed water body",
   physio: "Unnamed physical region",
   peak: "Unnamed elevation",
@@ -112,6 +116,7 @@ export function categoryForLayer(layerId: string): FeatureCategory | null {
   if (layerId.startsWith("port-")) return "port";
   if (layerId.startsWith("peak-")) return "peak";
   if (layerId === "park") return "park";
+  if (layerId === "wetland") return "wetland";
   if (layerId === "marine-label") return "marine";
   if (layerId === "physio-label") return "physio";
   return null;
@@ -218,6 +223,9 @@ export function buildFeatureCard(
       break;
     case "park":
       subtitle = textProperty(properties, "type") || "Protected area";
+      break;
+    case "wetland":
+      subtitle = "Wetland";
       break;
     case "marine": {
       const kind = textProperty(properties, "class");

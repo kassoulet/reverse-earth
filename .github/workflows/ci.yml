@@ -37,11 +37,16 @@ jobs:
       - name: Cache Natural Earth sources
         uses: actions/cache@v4
         with:
-          path: map-build/.cache/ne
-          key: natural-earth-${{ hashFiles('map-build/natural-earth/build_natural_earth.py') }}
+          path: |
+            map-build/.cache/ne
+            map-build/.cache/ne-raster
+          key: natural-earth-${{ hashFiles('map-build/natural-earth/build_natural_earth.py', 'map-build/natural-earth/build_terrain.py') }}
 
       - name: Build the Natural Earth archive
         run: python map-build/natural-earth/build_natural_earth.py --force --quiet --report map-build/.work/natural-earth-report.json
+
+      - name: Build the terrain overlays
+        run: python map-build/natural-earth/build_terrain.py --force --quiet --report map-build/.work/natural-earth-terrain-report.json
 
       - name: Typecheck
         run: npm run typecheck

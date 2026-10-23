@@ -11,6 +11,7 @@ Layer schema (shared with any future filtered OSM source):
     land       polygons
     glacier    polygons (ice caps and glaciers)
     water      polygons (lakes)
+    wetland    polygons (Natural Earth named wetlands)
     reef       lines (coral reefs)
     urban      polygons (Natural Earth urban areas at z5-z6)
     park       polygons (Natural Earth parks and protected areas at z5-z6)
@@ -240,6 +241,7 @@ PHYSIO_CLASS_BY_FEATURECLA = {
     "Valley": "valley",
 }
 REEF_MIN_ZOOM = 5
+WETLAND_MIN_ZOOM = 0
 PEAK_MIN_ZOOM = 5
 PEAK_RANK_BY_ZOOM = {5: 2, 6: 3}
 
@@ -247,6 +249,7 @@ LAYER_ORDER = (
     "land",
     "glacier",
     "water",
+    "wetland",
     "reef",
     "urban",
     "park",
@@ -493,6 +496,17 @@ def build_feature(prepared: PreparedSource, geometry: BaseGeometry, props: dict[
             properties={"class": "reef", "rank": rank},
             rank=rank,
             min_zoom=REEF_MIN_ZOOM,
+        )
+    if layer == "wetland":
+        return Feature(
+            geometry=geometry,
+            properties={
+                "name": display_name(props.get("NAME_EN")) or display_name(props.get("NAME")),
+                "class": "wetland",
+                "rank": number_value(props.get("SCALERANK"), 99),
+            },
+            rank=number_value(props.get("SCALERANK"), 99),
+            min_zoom=WETLAND_MIN_ZOOM,
         )
     if layer == "glacier":
         rank = number_value(props.get("scalerank"), 99)
@@ -821,6 +835,51 @@ def physical_region_labels(cache_dir: Path) -> PreparedSource:
     return prepared
 
 
+def wetland_areas(cache_dir: Path) -> PreparedSource:
+    """Keep Natural Earth's named wetland polygons as filled areas."""
+    prepared = PreparedSource(layer="wetland", scale="10m")
+    seen: set[Any] = set()
+    skipped = 0
+    for raw in load_geojson(cache_dir / "ne_10m_geography_regions_polys.geojson"):
+        props = raw.get("properties") or {}
+        if string_value(props.get("FEATURECLA")) != "Wetlands":
+            continue
+        ne_id = props.get("NE_ID")
+        if ne_id is not None:
+            if ne_id in seen:
+                continue
+            seen.add(ne_id)
+
+        geometry_data = raw.get("geometry")
+        if not isinstance(geometry_data, dict):
+            skipped += 1
+            continue
+        try:
+            source_geometry = shape(geometry_data)
+            projected = transform(source_geometry, display_project)
+            projected = normalise_geometry(projected)
+            if projected is None:
+                skipped += 1
+                continue
+            projected = simplify_for_display(projected, "wetland")
+        except Exception as error:  # noqa: BLE001 - report malformed source features
+            LOG.warning("Skipping invalid wetland feature: %s", error)
+            skipped += 1
+            continue
+
+        for part in explode_parts(projected):
+            prepared.features.append(build_feature(prepared, part, props))
+
+    prepared.skipped = skipped
+    prepared.tree = STRtree([feature.geometry for feature in prepared.features])
+    LOG.info(
+        "wetland 10m: %s features (%s skipped)",
+        len(prepared.features),
+        skipped,
+    )
+    return prepared
+
+
 def admin1_labels(cache_dir: Path) -> list[Feature]:
     """Pick a small, globally distributed set of Admin 1 label anchors.
 
@@ -935,6 +994,8 @@ def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
         ]
     if source.layer == "reef":
         return source.features if zoom >= REEF_MIN_ZOOM else []
+    if source.layer == "wetland":
+        return source.features if zoom >= WETLAND_MIN_ZOOM else []
     if source.layer == "physio":
         limit = PHYSIO_RANK_BY_ZOOM.get(zoom, -1)
         return [
@@ -976,6 +1037,12 @@ def prepare_zoom_sources(
         source = loaded[(layer, "10m" if layer == "glacier" else scale)]
         features = filtered_features(source, zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
+
+    if zoom >= WETLAND_MIN_ZOOM:
+        features = filtered_features(loaded[("wetland", "10m")], zoom)
+        result["wetland"] = (features, STRtree([feature.geometry for feature in features]))
+    else:
+        result["wetland"] = ([], None)
 
     if zoom >= ADMIN1_MIN_ZOOM:
         boundary, _ = result["boundary"]
@@ -1024,7 +1091,7 @@ def prepare_zoom_sources(
 
 
 def extract_geometry(geometry: BaseGeometry, layer: str) -> BaseGeometry | None:
-    if layer in ("land", "glacier", "water", "urban", "park"):
+    if layer in ("land", "glacier", "water", "wetland", "urban", "park"):
         allowed = ("Polygon", "MultiPolygon")
     elif layer in ("boundary", "waterway", "road", "railway", "reef"):
         allowed = ("LineString", "MultiLineString")
@@ -1096,7 +1163,7 @@ def encode_tile(
                     clipped,
                     [scale, 0, 0, scale, -west * scale, -north * scale],
                 )
-                if layer in ("land", "glacier", "water", "urban", "park"):
+                if layer in ("land", "glacier", "water", "wetland", "urban", "park"):
                     tile_geometry = tile_geometry.simplify(2.0, preserve_topology=True)
                 elif layer in ("boundary", "waterway", "road", "railway", "reef"):
                     tile_geometry = tile_geometry.simplify(1.0, preserve_topology=False)
@@ -1200,6 +1267,7 @@ def build(
     loaded[("reef", "10m")] = load_layer(
         cache_dir, "reef", "ne_10m_reefs", "10m"
     )
+    loaded[("wetland", "10m")] = wetland_areas(cache_dir)
     loaded[("marine", "10m")] = marine_labels(cache_dir)
     loaded[("physio", "10m")] = physical_region_labels(cache_dir)
     loaded[("peak", "10m")] = load_layer(
@@ -1295,6 +1363,7 @@ def build_metadata(minzoom: int, maxzoom: int, counts: dict[str, int]) -> dict[s
     fields = {
         "land": {"class": "String"},
         "water": {"name": "String", "class": "String", "rank": "Number"},
+        "wetland": {"name": "String", "class": "String", "rank": "Number"},
         "glacier": {"class": "String", "rank": "Number"},
         "reef": {"class": "String", "rank": "Number"},
         "urban": {"class": "String", "rank": "Number"},

@@ -282,6 +282,17 @@ class OptionalDetailTests(unittest.TestCase):
             [1, 2, 3],
         )
 
+    def test_wetlands_keep_names_and_polygon_class(self):
+        source = build.PreparedSource(layer="wetland", scale="10m")
+        feature = build.build_feature(
+            source,
+            square(0, 0),
+            {"NAME": "PANTANAL", "FEATURECLA": "Wetlands", "SCALERANK": 3},
+        )
+        self.assertEqual(feature.properties["name"], "Pantanal")
+        self.assertEqual(feature.properties["class"], "wetland")
+        self.assertEqual(feature.min_zoom, build.WETLAND_MIN_ZOOM)
+
     def test_marine_display_names_normalise_all_caps(self):
         self.assertEqual(build.display_name("SOUTHERN OCEAN"), "Southern Ocean")
         self.assertEqual(build.display_name("GULF OF MEXICO"), "Gulf of Mexico")

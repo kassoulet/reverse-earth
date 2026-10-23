@@ -8,7 +8,7 @@
  * MapLibre which features are actually rendered.
  *
  * Requirements:
- *   - `npm run build` has produced dist/ with data/world.pmtiles
+ *   - `npm run build` has produced dist/ with the vector and terrain archives
  *   - Google Chrome or Chromium is installed (override with CHROME_PATH)
  *
  * Usage: node map-build/scripts/browser-smoke.mjs
@@ -45,6 +45,9 @@ const LAYER_IDS = [
   "railway",
   "urban",
   "park",
+  "hillshade",
+  "forest",
+  "wetland",
   "glacier",
   "reef",
   "water-label",
@@ -426,9 +429,14 @@ async function run() {
         const count = (layers) => map.queryRenderedFeatures({ layers }).length;
         const regions = count(["place-region"]);
         if (regions === 0) return null;
+        if (!map.isSourceLoaded("hillshade") || !map.isSourceLoaded("forest")) return null;
         return {
           zoom: map.getZoom(),
           styleLoaded: map.isStyleLoaded(),
+          overlays: {
+            hillshade: map.isSourceLoaded("hillshade"),
+            forest: map.isSourceLoaded("forest"),
+          },
           layers: Object.fromEntries(
             ${JSON.stringify(LAYER_IDS)}.map((id) => [id, Boolean(map.getLayer(id))]),
           ),
@@ -467,6 +475,9 @@ async function run() {
     if (report.rendered.urban === 0) fail("No urban areas were rendered.");
     if (report.rendered.parks === 0) fail("No parks were rendered.");
     if (report.rendered.airports === 0) fail("No airports were rendered.");
+    if (!report.overlays.hillshade || !report.overlays.forest) {
+      fail(`The terrain overlays did not load: ${JSON.stringify(report.overlays)}`);
+    }
     if (
       Math.abs(initialUrl.zoom - 6) > 0.01 ||
       Math.abs(initialUrl.latitude - 38.9998) > 0.05 ||
@@ -518,9 +529,15 @@ async function run() {
     if (
       legend.expanded !== "true" ||
       legend.focused !== "legend-close" ||
-      !["Glacier", "Ocean & sea", "Physical region", "Peak"].every((entry) =>
-        legend.entries.includes(entry),
-      )
+      ![
+        "Glacier",
+        "Terrain",
+        "Forest",
+        "Wetland",
+        "Ocean & sea",
+        "Physical region",
+        "Peak",
+      ].every((entry) => legend.entries.includes(entry))
     ) {
       fail(`Unexpected legend contents: ${JSON.stringify(legend)}`);
     }
@@ -617,6 +634,7 @@ async function run() {
           layers: ["road-major", "road-secondary"],
         }).length;
         if (roads === 0) return null;
+        if (!map.isSourceLoaded("hillshade") || !map.isSourceLoaded("forest")) return null;
         return {
           orientation: container.dataset.orientation,
           southPressed: document.querySelector("#orientation-south")?.getAttribute("aria-pressed"),
@@ -624,6 +642,7 @@ async function run() {
           label: container.getAttribute("aria-label"),
           roads,
           railway: map.queryRenderedFeatures({ layers: ["railway"] }).length,
+          overlays: true,
         };
       })()`,
       "north-up view",
@@ -1233,8 +1252,11 @@ async function run() {
         if (!map || !map.loaded()) return null;
         const glacier = map.queryRenderedFeatures({ layers: ["glacier"] }).length;
         const marine = map.queryRenderedFeatures({ layers: ["marine-label"] }).length;
-        if (glacier === 0 || marine === 0) return null;
-        return { glacier, marine };
+        const wetland = map
+          .querySourceFeatures("world", { sourceLayer: "wetland" })
+          .length;
+        if (glacier === 0 || marine === 0 || wetland === 0) return null;
+        return { glacier, marine, wetland };
       })()`,
       "glacier and marine labels at world scale",
       20_000,
@@ -1244,11 +1266,15 @@ async function run() {
     const pmtilesResponses = cdp.responses.filter((response) =>
       response.url.includes("world.pmtiles"),
     );
+    const overlayResponses = cdp.responses.filter((response) =>
+      /(hillshade|forest)-(south|north)\.pmtiles/.test(response.url),
+    );
     const summary = {
       splash,
       legend,
       readout: { initial: readout, paris: parisReadout },
       reefCount,
+      overlays: report.overlays,
       detailLayers: report.rendered,
       globalDetail,
       northUp: {
@@ -1291,6 +1317,8 @@ async function run() {
 
       pmtilesRequests: pmtilesResponses.length,
       pmtilesStatuses: [...new Set(pmtilesResponses.map((response) => response.status))],
+      overlayRequests: overlayResponses.length,
+      overlayStatuses: [...new Set(overlayResponses.map((response) => response.status))],
       consoleErrors: cdp.consoleErrors,
       failedRequests: failures,
     };
@@ -1299,6 +1327,10 @@ async function run() {
     if (pmtilesResponses.length === 0) fail("The browser never requested world.pmtiles.");
     if (pmtilesResponses.some((response) => ![200, 206].includes(response.status))) {
       fail(`world.pmtiles returned an unexpected status: ${JSON.stringify(pmtilesResponses)}`);
+    }
+    if (overlayResponses.length === 0) fail("The browser never requested a terrain overlay.");
+    if (overlayResponses.some((response) => ![200, 206].includes(response.status))) {
+      fail(`A terrain overlay returned an unexpected status: ${JSON.stringify(overlayResponses)}`);
     }
     if (cdp.consoleErrors.length > 0) {
       fail(`Console errors: ${cdp.consoleErrors.join(" | ")}`);

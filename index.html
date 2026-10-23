@@ -168,7 +168,10 @@
         </p>
         <dl class="info-panel__facts">
           <dt>Data</dt>
-          <dd>Natural Earth, public domain. Native zooms 0–6; higher zooms are overzoom.</dd>
+          <dd>
+            Natural Earth, public domain. Vector tiles use native zooms 0–6 and
+            terrain overlays use 0–5; higher zooms are overzoom.
+          </dd>
           <dt>Coordinates</dt>
           <dd>
             The address bar stores real latitude and longitude (north-positive)
@@ -179,9 +182,9 @@
           <dd><code>display_latitude = -latitude</code></dd>
           <dt>Inspect</dt>
           <dd>
-            Click a place, airport, port, park, ocean/sea, physical region or peak
-            for a quick detail card. The scale bar and center readout stay in real
-            geographic coordinates.
+            Click a place, airport, port, park, wetland, ocean/sea, physical region
+            or peak for a quick detail card. The scale bar and center readout stay
+            in real geographic coordinates.
           </dd>
         </dl>
       </section>
@@ -202,6 +205,18 @@
           <li>
             <span class="legend__swatch legend__swatch--glacier" aria-hidden="true"></span>
             <span><strong>Glacier</strong><small>Ice sheets and glaciers</small></span>
+          </li>
+          <li>
+            <span class="legend__swatch legend__swatch--terrain" aria-hidden="true"></span>
+            <span><strong>Terrain</strong><small>Shaded relief and hillshade</small></span>
+          </li>
+          <li>
+            <span class="legend__swatch legend__swatch--forest" aria-hidden="true"></span>
+            <span><strong>Forest</strong><small>Natural Earth land cover</small></span>
+          </li>
+          <li>
+            <span class="legend__swatch legend__swatch--wetland" aria-hidden="true"></span>
+            <span><strong>Wetland</strong><small>Named wetland areas</small></span>
           </li>
           <li>
             <span class="legend__swatch legend__swatch--marine" aria-hidden="true">Aa</span>

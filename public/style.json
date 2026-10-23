@@ -2,7 +2,7 @@
   "version": 8,
   "name": "Reversed Earth — Natural Earth",
   "metadata": {
-    "description": "A warm, south-up Natural Earth basemap with urban areas, parks, transport detail and a compact place-label hierarchy.",
+    "description": "A warm, south-up Natural Earth basemap with hillshade, forest cover, wetlands, urban areas, parks, transport detail and a compact place-label hierarchy.",
     "south_up": true
   },
   "glyphs": "fonts/{fontstack}/{range}.pbf",
@@ -13,6 +13,22 @@
       "minzoom": 0,
       "maxzoom": 6,
       "attribution": "<a href=\"https://www.naturalearthdata.com/\" target=\"_blank\" rel=\"noopener\">Natural Earth</a> (public domain)"
+    },
+    "hillshade": {
+      "type": "raster",
+      "url": "pmtiles://data/hillshade-south.pmtiles",
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 5,
+      "attribution": "<a href=\"https://www.naturalearthdata.com/\" target=\"_blank\" rel=\"noopener\">Natural Earth</a> shaded relief (public domain)"
+    },
+    "forest": {
+      "type": "raster",
+      "url": "pmtiles://data/forest-south.pmtiles",
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 5,
+      "attribution": "<a href=\"https://www.naturalearthdata.com/\" target=\"_blank\" rel=\"noopener\">Natural Earth</a> land cover (public domain)"
     }
   },
   "layers": [
@@ -31,6 +47,53 @@
       "paint": {
         "fill-color": "#f2eee5",
         "fill-outline-color": "#d6d0c4"
+      }
+    },
+    {
+      "id": "hillshade",
+      "type": "raster",
+      "source": "hillshade",
+      "paint": {
+        "raster-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          0.45,
+          5,
+          0.6
+        ],
+        "raster-fade-duration": 0,
+        "raster-resampling": "linear"
+      }
+    },
+    {
+      "id": "forest",
+      "type": "raster",
+      "source": "forest",
+      "paint": {
+        "raster-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          0.45,
+          5,
+          0.65
+        ],
+        "raster-fade-duration": 0,
+        "raster-resampling": "linear"
+      }
+    },
+    {
+      "id": "wetland",
+      "type": "fill",
+      "source": "world",
+      "source-layer": "wetland",
+      "paint": {
+        "fill-color": "#7f9e8f",
+        "fill-outline-color": "#66897b",
+        "fill-opacity": 0.55
       }
     },
     {

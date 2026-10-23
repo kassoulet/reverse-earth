@@ -42,7 +42,8 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Provide and verify world.pmtiles
+      - name: Provide and verify the map archives
+        id: archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -50,12 +51,12 @@ jobs:
           mkdir -p public/data
           used_release=0
           if [ -f public/data/world.pmtiles ]; then
-            echo "Using the world.pmtiles already in the checkout."
+            echo "Using the map archives already in the checkout."
           else
             used_release=1
-            echo "Looking for world.pmtiles and its checksum on the latest GitHub release..."
-            if ! gh release download --repo "$GITHUB_REPOSITORY" --pattern 'world.pmtiles*' --dir public/data; then
-              echo "::error title=Map data missing::No public/data/world.pmtiles and no world.pmtiles asset on the latest GitHub release. Run npm run map:build, attach the archive to a release, and redeploy. See README.md."
+            echo "Looking for the map archives and checksums on the latest GitHub release..."
+            if ! gh release download --repo "$GITHUB_REPOSITORY" --pattern '*.pmtiles*' --dir public/data; then
+              echo "::error title=Map data missing::No public/data/world.pmtiles and no map archive assets on the latest GitHub release. Run npm run map:build, publish the archives, and redeploy. See README.md."
               exit 1
             fi
           fi
@@ -67,7 +68,41 @@ jobs:
             fi
             (cd public/data && sha256sum -c world.pmtiles.sha256)
           fi
-          ls -lh public/data/world.pmtiles
+          if [ -s public/data/hillshade-south.pmtiles ] &&
+             [ -s public/data/hillshade-north.pmtiles ] &&
+             [ -s public/data/forest-south.pmtiles ] &&
+             [ -s public/data/forest-north.pmtiles ]; then
+            echo "overlays=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "overlays=false" >> "$GITHUB_OUTPUT"
+          fi
+          ls -lh public/data/*.pmtiles
+
+      - name: Set up Python for the terrain fallback
+        if: steps.archives.outputs.overlays != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: map-build/requirements.txt
+
+      - name: Cache Natural Earth raster sources
+        if: steps.archives.outputs.overlays != 'true'
+        uses: actions/cache@v4
+        with:
+          path: map-build/.cache/ne-raster
+          key: natural-earth-raster-${{ hashFiles('map-build/natural-earth/build_terrain.py') }}
+
+      - name: Build missing terrain overlays
+        if: steps.archives.outputs.overlays != 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install -r map-build/requirements.txt
+          python map-build/natural-earth/build_terrain.py --force --quiet
+          test -s public/data/hillshade-south.pmtiles
+          test -s public/data/hillshade-north.pmtiles
+          test -s public/data/forest-south.pmtiles
+          test -s public/data/forest-north.pmtiles
 
       - name: Work out the Pages base path
         id: base

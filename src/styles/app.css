@@ -278,6 +278,22 @@ body {
   background: #eef5f4;
 }
 
+.legend__swatch--terrain {
+  border: 1px solid #d6d0c4;
+  background:
+    linear-gradient(145deg, #f4efe5 0 34%, #c4b6a1 34% 48%, #8e7f6b 48% 66%, #f4efe5 66%);
+}
+
+.legend__swatch--forest {
+  border: 1px solid #a9b99a;
+  background: #6f8c5e;
+}
+
+.legend__swatch--wetland {
+  border: 1px solid #a8bdb2;
+  background: #7f9e8f;
+}
+
 .legend__swatch--marine {
   background: #a9cbe0;
   color: #587c92;

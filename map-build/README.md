@@ -1,7 +1,8 @@
 # Reversed Earth map build pipeline
 
-This directory produces the single static artifact the viewer needs:
-`public/data/world.pmtiles`.
+This directory produces the static artifacts the viewer needs: the vector
+archive `public/data/world.pmtiles` and four raster overlays
+(`hillshade-{south,north}.pmtiles`, `forest-{south,north}.pmtiles`).
 
 The default **V1** pipeline uses Natural Earth only. It needs no Java, no OSM
 PBF and no tile database.
@@ -15,6 +16,16 @@ natural-earth/build_natural_earth.py
    │   clip to the display world, simplify per tile, encode MVT
    ▼
 public/data/world.pmtiles   (south-up geometry, native z0–z6)
+
+Pinned Natural Earth shaded relief + land cover
+   │
+   ▼
+natural-earth/build_terrain.py
+   │   warp to Web Mercator, derive hillshade / forest masks
+   │   encode WebP raster tiles, flip a south-up copy
+   ▼
+public/data/hillshade-{south,north}.pmtiles   (z0–z5)
+public/data/forest-{south,north}.pmtiles      (z0–z5)
 ```
 
 The optional **V2** path in `scripts/build-world.sh` is the older
@@ -29,8 +40,8 @@ used by the default site.
 | Node.js | 22+ for the viewer and size gate | 22+ |
 | Java | not required | 25+ (Planetiler 0.10.x) |
 | Input | pinned GeoJSON, downloaded automatically | planet PBF or Geofabrik extract |
-| RAM | a few hundred MB | roughly 0.5× the PBF |
-| Disk | about 300 MB | 5–10× the PBF |
+| RAM | up to about 1 GB during the raster warp | roughly 0.5× the PBF |
+| Disk | about 1.5 GB | 5–10× the PBF |
 
 Natural Earth downloads and generated archives are gitignored and must never be
 committed.
@@ -43,23 +54,29 @@ map-build/.venv/bin/pip install -r map-build/requirements.txt
 ```
 
 The Python dependencies are pinned to `pmtiles==3.8.1`,
-`mapbox-vector-tile==2.2.0`, `shapely==2.2.0` and `numpy==2.5.4`.
+`mapbox-vector-tile==2.2.0`, `shapely==2.2.0`, `numpy==2.5.4` and
+`pillow==11.3.0`.
 
-## Build the default archive
+## Build the default archives
 
 ```bash
 npm run map:build
 ```
 
-Equivalent explicit command:
+Equivalent explicit commands:
 
 ```bash
 map-build/.venv/bin/python map-build/natural-earth/build_natural_earth.py \
   --force \
   --report map-build/.work/natural-earth-report.json
+map-build/.venv/bin/python map-build/natural-earth/build_terrain.py \
+  --force \
+  --report map-build/.work/natural-earth-terrain-report.json
 ```
 
-What it does:
+To rebuild only the raster overlays, use `npm run map:build:terrain`.
+
+What the vector builder does:
 
 1. Downloads the pinned Natural Earth GeoJSON files from
    `nvkelso/natural-earth-vector` at commit
@@ -69,20 +86,22 @@ What it does:
 3. Loads land, lakes, country boundaries, rivers/lake centerlines and populated
    places at 110m, 50m and 10m, plus 10m Admin 1 boundaries, Admin 1 label
    anchors, roads, railways, urban areas, airports, ports, parks, glaciers,
-   coral reefs, ocean/sea label anchors, desert/range/plain/plateau/basin/valley
-   label anchors and mountain peaks.
+   coral reefs, ocean/sea label anchors, named wetland polygons,
+   desert/range/plain/plateau/basin/valley label anchors and mountain peaks.
 4. Projects longitude/latitude into the display world with
    `display_latitude = -latitude`, then clips to the Web Mercator display bounds.
 5. Splits multi-geometries into indexed parts, simplifies, and clips each part
    per tile.
-6. Writes MVT layers `land`, `glacier`, `water`, `reef`, `urban`, `park`,
-   `boundary`, `waterway`, `place`, `road`, `railway`, `airport`, `port`,
-   `marine`, `physio` and `peak` into a single PMTiles archive, native z0–z6.
+6. Writes MVT layers `land`, `glacier`, `water`, `wetland`, `reef`, `urban`,
+   `park`, `boundary`, `waterway`, `place`, `road`, `railway`, `airport`,
+   `port`, `marine`, `physio` and `peak` into a single PMTiles archive, native
+   z0–z6.
 7. Records `south_up=true`, the coordinate transform and the source commit in
    the archive metadata.
 
-A full build is currently about 5.3 MB, 3,363 non-empty tiles and roughly two
-minutes of CPU on a laptop.
+A full vector build is currently about 5.3 MB and 3,363 non-empty tiles. The
+four raster overlays add about 29 MB. Building everything takes roughly three
+minutes on a laptop; the raster warp and WebP encoding are the slower part.
 
 ### Zoom and detail
 
@@ -102,6 +121,7 @@ does not duplicate data in the archive.
 | `land` | polygons | `class` |
 | `glacier` | polygons | `class`, `rank` |
 | `water` | polygons | `name`, `class`, `rank` |
+| `wetland` | polygons | `name`, `class`, `rank` |
 | `reef` | lines | `class`, `rank` |
 | `urban` | polygons | `class`, `rank` |
 | `park` | polygons | `name`, `type`, `rank` |
@@ -131,9 +151,9 @@ airports with `scalerank <= 4` at z5 and `<= 6` at z6; and ports with
 z0–z1, rising to the full set at z6; ocean/sea labels use Natural Earth's
 `min_label` plus a scalerank cap (oceans first, then seas, gulfs and bays);
 desert, range, plain, plateau, basin and valley labels use the same
-one-zoom-earlier `min_label` rule with a scalerank cap; coral reefs appear at
-z5–z6; and mountain peaks appear at z5–z6 with `scalerank <= 2` at z5 and
-`<= 3` at z6.
+one-zoom-earlier `min_label` rule with a scalerank cap; named wetlands are shown
+at every zoom; coral reefs appear at z5–z6; and mountain peaks appear at z5–z6
+with `scalerank <= 2` at z5 and `<= 3` at z6.
 Admin 1 labels appear only at z6 and
 only when both `min_label <= 9` and `labelrank <= 5`. The label thresholds
 cover countries whose region labels normally start at z7–z8 (for example
@@ -173,6 +193,38 @@ rather than emitting invalid MVT.
 - **Blank labels:** confirm the glyph path resolves under the Vite base URL and
   that the place features retain `kind` and `name`.
 
+## Terrain overlays
+
+`build_terrain.py` downloads two pinned Natural Earth 1:10m rasters: the
+grayscale shaded-relief image (`SR_HR`, 21,600 × 10,800) and the Natural Earth I
+land-cover image (`NE1_LR_LC`, 16,200 × 8,100). Both are public domain.
+
+- Shaded relief is sampled against its flat-water value (206). Flat areas stay
+transparent; darker slopes become a warm shadow and brighter slopes a pale
+highlight.
+- Dark-green land-cover pixels become a transparent forest wash. This is a
+  cartographic classification, not a surveyed forest boundary; dry grassland,
+cropland and desert are deliberately excluded.
+- Both images are warped to Web Mercator at 8,192 × 4,096, split into 256 px
+  WebP tiles for z0–z5, and written as PMTiles. Transparent tiles are skipped.
+- The south-up copy is the north-up image flipped vertically. That keeps the
+  overlays registered with the south-up vector geometry without a browser-side
+  image transform.
+
+Wetlands are separate vector polygons from Natural Earth's physical regions
+layer, so they can be clicked and inspected like other features.
+
+Tuning notes:
+
+- **Overlays too large:** lower `--maxzoom` (the default is 5) or lower the WebP
+  `quality` in `encode_tile`.
+- **Terrain missing on water:** keep `SHADED_RELIEF_NEUTRAL` at the source's
+  flat-water value; changing it leaves a gray veil over oceans.
+- **Forest mask too broad/narrow:** adjust the green thresholds in
+  `forest_image`, not the style opacity.
+- **North-up out of register:** rebuild both orientations; do not reuse a
+  north-up archive from a different source transform.
+
 ## Storage gate
 
 `configuration/size-budget.json` sets a generous Pages budget:
@@ -191,9 +243,10 @@ node map-build/scripts/check-size.mjs --archive public/data/world.pmtiles
 node map-build/scripts/check-size.mjs dist --require-data
 ```
 
-The second form runs during the Pages deployment. It fails if the archive is
-missing, the archive exceeds its budget, the deployment exceeds its budget, or
-the deployment reaches GitHub Pages' 1 GB hard limit.
+The second form runs during the Pages deployment. It fails if the vector
+archive is missing, the vector archive exceeds its budget, the deployment
+(including the terrain overlays) exceeds its budget, or the deployment reaches
+GitHub Pages' 1 GB hard limit.
 
 ## Optional OSM / Planetiler path
 
@@ -240,5 +293,7 @@ npm run build
 npm run size:check
 ```
 
-`map:test` runs the Natural Earth builder tests first, then the optional MVT
-transform tests.
+`map:test` runs the Natural Earth vector and terrain builder tests first, then
+the optional MVT transform tests. The terrain tests include small synthetic
+images for the hillshade/forest masks and, when the overlays are present, check
+that each archive is WebP PMTiles with `south_up=true`.

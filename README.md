@@ -17,27 +17,29 @@ Reversed Earth is a static, south-up world map built from Natural Earth data.
 - The address bar stores **real geographic coordinates**, so a copied URL opens
   the same place in either orientation.
 - Search by place name or by coordinates such as `48.8566, 2.3522`.
-- No tile server, no database, no runtime backend: MapLibre GL JS reads one
-  PMTiles archive directly in the browser.
+- No tile server, no database, no runtime backend: MapLibre GL JS reads its
+  PMTiles archives directly in the browser.
 
 The default V1 archive is generated entirely from Natural Earth, inverted at
 the **geometry** level, not with CSS, a rotated camera or a mirrored canvas.
 
 ```
-Pinned Natural Earth GeoJSON
+Pinned Natural Earth GeoJSON + shaded-relief / land-cover rasters
       │
       ▼
-build_natural_earth.py: select 110m/50m/10m detail by zoom
-      │   display latitude = -latitude, clip per tile, write MVT
-      ▼
-world.pmtiles (south-up geometry, native z0–z6)
-      │
-      ▼
+build_natural_earth.py        build_terrain.py
+      │   display lat = -lat        │   warp, derive hillshade/forest
+      │   clip per tile, write MVT  │   write WebP raster tiles
+      ▼                            ▼
+world.pmtiles (z0–z6)        hillshade/forest-{south,north}.pmtiles (z0–z5)
+      └──────────────┬─────────────┘
+                     ▼
 MapLibre GL JS + pmtiles protocol, static on GitHub Pages
 ```
 
-The generated archive is about **5.3 MB** and is not committed. Until it is
-built and published, the viewer shows a clear “Map data not built yet” panel.
+The generated vector archive is about **5.3 MB**; the four raster overlays add
+about **29 MB**. None of them are committed. Until they are built and
+published, the viewer shows a clear “Map data not built yet” panel.
 
 ## Map experience
 
@@ -57,7 +59,9 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   and towns as you zoom in. Named lakes and rivers appear from z4. At z5–z6
   the map also adds coral reefs, urban areas, parks, airports, ports, named
   mountain peaks, selected Admin 1 boundaries, a denser road and railway
-  network, and ranked Admin 1 labels at z6.
+  network, and ranked Admin 1 labels at z6. A transparent hillshade and forest
+  cover are drawn from z0–z5, with named wetland polygons from Natural Earth at
+  every zoom.
 - Style in [`public/style.json`](public/style.json): warm land, blue water,
   muted country borders and a compact place-label hierarchy.
 - Self-hosted Noto Sans glyphs; no runtime CDN dependency.
@@ -66,15 +70,15 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   the browser.
 - An information control explains the orientation, the data source and the
   coordinate contract.
-- A legend control beside the information button explains the ice, ocean and
-  sea, physical region, and peak layers.
+- A legend control beside the information button explains the ice, terrain,
+  forest, wetland, ocean and sea, physical region, and peak layers.
 - A share control in the top-right controls sends the current view with the
   native share sheet where available and copies the URL to the clipboard
   otherwise. The share text names a nearby rendered city, town, region or
   country, and both paths use the same real-coordinate hash as the address bar.
-- Click a place, airport, port, park, ocean/sea, physical region or mountain
-  peak for a compact card with its category, population, IATA code, elevation
-  or physical-region type where available, and real-world coordinates.
+- Click a place, airport, port, park, wetland, ocean/sea, physical region or
+  mountain peak for a compact card with its category, population, IATA code,
+  elevation or physical-region type where available, and real-world coordinates.
 
 Rotation and pitch are deliberately disabled so the plan view stays
 unambiguous. The map still behaves like a conventional pan/zoom viewer in every
@@ -165,8 +169,9 @@ npm install
 npm run dev
 ```
 
-The map data panel explains that `public/data/world.pmtiles` is missing. Build
-it once with the steps below, or test with an archive elsewhere:
+The map data panel explains that the map archives in `public/data/` are
+missing. Build them once with the steps below, or test with a vector archive
+elsewhere:
 
 ```bash
 VITE_PMTILES_URL=https://example.com/world.pmtiles npm run dev
@@ -176,8 +181,8 @@ VITE_PMTILES_URL=https://example.com/world.pmtiles npm run dev
 
 ## Build the map
 
-Requirements: Python 3.10+ and about 300 MB of free disk. No Java, no OSM PBF
-and no Planetiler run are needed.
+Requirements: Python 3.10+ and about 1.5 GB of free disk while the raster
+sources are cached. No Java, no OSM PBF and no Planetiler run are needed.
 
 ```bash
 python3 -m venv map-build/.venv
@@ -186,15 +191,20 @@ map-build/.venv/bin/pip install -r map-build/requirements.txt
 npm run map:build
 ```
 
-`map:build` downloads the pinned Natural Earth GeoJSON files into
-`map-build/.cache/ne`, verifies their SHA-256 checksums, builds z0–z6 and writes
-`public/data/world.pmtiles`. A full build takes roughly two minutes on a
-typical laptop. Use `--report` to write a JSON summary:
+`map:build` downloads the pinned Natural Earth GeoJSON and raster sources into
+`map-build/.cache/`, verifies their SHA-256 checksums, builds the vector archive
+and the four terrain overlays, and writes everything to `public/data/`. A full
+build takes roughly three minutes on a typical laptop. Use `--report` to write
+JSON summaries:
 
 ```bash
 map-build/.venv/bin/python map-build/natural-earth/build_natural_earth.py \
   --force --report map-build/.work/natural-earth-report.json
+map-build/.venv/bin/python map-build/natural-earth/build_terrain.py \
+  --force --report map-build/.work/natural-earth-terrain-report.json
 ```
+
+To rebuild only the raster overlays, run `npm run map:build:terrain`.
 
 The builder is deliberately database-free:
 
@@ -202,9 +212,11 @@ The builder is deliberately database-free:
 - Latitude is negated while projecting, so the tile grid itself is south-up.
 - Geometry is clipped to the display world, which keeps polar rings valid.
 - Multi-geometries are split into small indexed parts before per-tile clipping.
-- MVT layers: `land`, `glacier`, `water`, `reef`, `urban`, `park`, `boundary`,
-  `waterway`, `place`, `road`, `railway`, `airport`, `port`, `marine`, `physio`,
-  `peak`.
+- MVT layers: `land`, `glacier`, `water`, `wetland`, `reef`, `urban`, `park`,
+  `boundary`, `waterway`, `place`, `road`, `railway`, `airport`, `port`,
+  `marine`, `physio`, `peak`.
+- Terrain overlays: shaded relief and a land-cover forest mask, warped to Web
+  Mercator and written as south-up and north-up WebP PMTiles at z0–z5.
 - Admin 1 label anchors use Natural Earth's `min_label`/`labelrank` hints, so
   the z6 set stays bounded instead of showing every subdivision.
 - PMTiles metadata records `south_up=true`, the transform and the source commit.
@@ -237,10 +249,11 @@ npm run test:browser
 ```
 
 The TypeScript tests cover the coordinate contract, URL state, north-up tile
-inversion, coordinate parsing, place ranking and scale-bar selection. The Python tests cover the
-Natural Earth projection, geometry cleanup, part splitting, tile encoding, the
-generated PMTiles archive (when present) and the optional MVT latitude-flip
-transform. The browser smoke test checks the splash background and its
+inversion, coordinate parsing, place ranking, inspect cards and scale-bar
+selection. The Python tests cover the Natural Earth projection, geometry
+cleanup, part splitting, tile encoding, the generated vector and raster PMTiles
+archives (when present), the hillshade/forest masks and the optional MVT
+latitude-flip transform. The browser smoke test checks the splash background and its
 indeterminate progress bar, then starts the built site in headless Chrome and
 asserts that the z6 Admin 1 boundaries, urban areas, parks, airports, roads,
 railways and region labels are actually rendered, then switches to north-up and
@@ -256,8 +269,8 @@ layers are checked at load. The live scale bar and center readout are checked
 before and after a search flight. And it checks that the
 share URL keeps real geographic coordinates through orientation and search
 changes. It
-needs `world.pmtiles` in `dist/` and a local Chrome or Chromium (override the
-binary with `CHROME_PATH`). Set
+needs the vector and terrain archives in `dist/data/` and a local Chrome or
+Chromium (override the binary with `CHROME_PATH`). Set
 `SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
 against a deployed Pages site instead of a local preview.
 
@@ -269,14 +282,16 @@ Actions tab.
 
 The workflow is [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
 
-1. Build `world.pmtiles` as above, or let the **Publish map data** workflow do it.
-2. Publish the archive as a release asset with the exact name
-   **`world.pmtiles`**. The release is just storage; the Pages site contains a
-   copy, so no runtime asset server is involved.
+1. Build the archives as above, or let the **Publish map data** workflow do it.
+2. Publish them as release assets with the exact names **`world.pmtiles`**,
+   **`hillshade-south.pmtiles`**, **`hillshade-north.pmtiles`**,
+   **`forest-south.pmtiles`** and **`forest-north.pmtiles`**. The release is
+   just storage; the Pages site contains a copy, so no runtime asset server is
+   involved.
 
-   The workflow builds, checks the storage budget and archive schema, and
-   attaches `world.pmtiles`, `world.pmtiles.sha256` and the build report. Run
-   **Actions → Publish map data → Run workflow**, or push a tag:
+   The workflow builds, checks the storage budget and archive schemas, and
+   attaches the five archives, a combined checksum file and both build reports.
+   Run **Actions → Publish map data → Run workflow**, or push a tag:
 
    ```bash
    git tag map-data-2026-10
@@ -286,29 +301,33 @@ The workflow is [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
    The manual equivalent is still:
 
    ```bash
+   (cd public/data && sha256sum *.pmtiles > world.pmtiles.sha256)
    gh release create map-data-2026-10 \
      --title "Map data 2026-10" \
-     public/data/world.pmtiles
+     public/data/*.pmtiles \
+     public/data/world.pmtiles.sha256
    ```
 
 3. In **Settings → Pages**, set **Source** to **GitHub Actions**.
 4. Push to `main`, run **Deploy to GitHub Pages** manually, or let a successful
    **Publish map data** run trigger it automatically.
 
-The workflow installs and tests the app, downloads `world.pmtiles` and
-`world.pmtiles.sha256` from the latest release if they are not already in
-`public/data/`, verifies the checksum, builds with the correct Pages base path,
-enforces the storage budget and deploys only static files. A failed release
-build does not trigger a deployment.
+The workflow installs and tests the app, downloads the map archives and
+checksum file from the latest release if they are not already in
+`public/data/`, verifies every checksum, builds with the correct Pages base
+path, enforces the storage budget and deploys only static files. If the release
+predates the terrain overlays, it builds the four overlays from the pinned
+Natural Earth rasters instead of failing. A failed release build does not
+trigger a deployment.
 
 If you use a custom domain instead of the default `github.io` URL, set
 `VITE_BASE=/` for the build because a custom domain serves the site from its
 root. Also update the canonical URL, `og:url` and the absolute `og:image` and
 `twitter:image` URLs in [`index.html`](index.html) to the new origin.
 
-The app resolves its style, glyphs and default archive against the Vite base
-URL, so project-site subpaths work without hard-coded `/` paths. The PMTiles
-URL can also be set with `VITE_PMTILES_URL` or `?pmtiles=`.
+The app resolves its style, glyphs, vector archive and terrain overlays against
+the Vite base URL, so project-site subpaths work without hard-coded `/` paths.
+The vector PMTiles URL can also be set with `VITE_PMTILES_URL` or `?pmtiles=`.
 
 ## Project layout
 
@@ -333,9 +352,9 @@ public/
   style.json                Natural Earth style
   fonts/                    self-hosted Noto Sans glyphs and Roboto Thin
   data/places.json          offline Natural Earth place index
-  data/                    also the destination for world.pmtiles (gitignored)
+  data/                    destination for the map archives (gitignored)
 map-build/
-  natural-earth/            default V1 builder + tests
+  natural-earth/            default V1 vector and terrain builders + tests
   transformations/          optional OSM MVT latitude inversion + tests
   scripts/check-size.mjs    deployment size gate
 .github/workflows/          CI, Pages, map-data release and live smoke
@@ -347,7 +366,9 @@ map-build/
 - Map data: Natural Earth, public domain.
   <https://www.naturalearthdata.com/>
 - Urban areas, airports, ports, parks, glaciers, coral reefs, marine labels,
-  physical regions and mountain peaks: Natural Earth, public domain.
+  wetlands, physical regions and mountain peaks: Natural Earth, public domain.
+- Hillshade: Natural Earth 1:10m shaded relief, public domain.
+- Forest cover: derived from Natural Earth I 1:10m land cover, public domain.
 - Place index: Natural Earth 1:10m populated places, public domain.
 - Map glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
   [`public/fonts/`](public/fonts/).
@@ -368,7 +389,11 @@ keeps a source credit visible in the map and in the information panel.
 - Airports and ports are Natural Earth's selected global points, not an
   exhaustive directory. The park layer is Natural Earth's US National Park
   Service dataset, so parks are only shown in the United States.
-- Native detail stops at z6; z14 is overzoom.
+- Native vector detail stops at z6; terrain overlays stop at z5. Higher zooms
+  are overzoom.
+- The forest wash is a cartographic classification of Natural Earth's
+  land-cover raster, not a surveyed forest boundary. Grassland, cropland and
+  desert are deliberately excluded.
 - The archive is a snapshot of Natural Earth, not live data.
 - Ocean/sea labels, glaciers and mountain peaks come from Natural Earth's
   selected 1:10m physical layers, not an exhaustive gazetteer.

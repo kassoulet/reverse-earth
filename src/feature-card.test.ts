@@ -13,6 +13,7 @@ describe("categoryForLayer", () => {
     expect(categoryForLayer("airport-label")).toBe("airport");
     expect(categoryForLayer("port-dot")).toBe("port");
     expect(categoryForLayer("park")).toBe("park");
+    expect(categoryForLayer("wetland")).toBe("wetland");
     expect(categoryForLayer("marine-label")).toBe("marine");
     expect(categoryForLayer("physio-label")).toBe("physio");
     expect(categoryForLayer("peak-dot")).toBe("peak");
@@ -113,6 +114,23 @@ describe("buildFeatureCard", () => {
     );
     expect(park?.eyebrow).toBe("Park");
     expect(park?.subtitle).toBe("National Park");
+  });
+
+  it("formats a named wetland", () => {
+    const card = buildFeatureCard(
+      "wetland",
+      { name: "Pantanal", class: "wetland" },
+      { longitude: -57.5, latitude: -17.5 },
+    );
+
+    expect(card).toEqual({
+      eyebrow: "Wetland",
+      title: "Pantanal",
+      subtitle: "Wetland",
+      facts: [
+        { label: "Coordinates", value: "17.50° S, 57.50° W" },
+      ],
+    });
   });
 
   it("formats a water body with its Natural Earth class", () => {

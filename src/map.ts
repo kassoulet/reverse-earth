@@ -9,13 +9,17 @@ import {
 // asset and MapLibre must be told where it is, otherwise it requests a path the
 // static host does not serve (and the map never finishes loading).
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-import { Protocol } from "pmtiles";
+import { PMTiles, Protocol } from "pmtiles";
 import type { MapArchive } from "./archive";
 import { glyphUrlTemplate, resolveAppUrl } from "./config";
 import { displayToGeo, geoToDisplay } from "./coordinates";
 import { NORTH_UP_SCHEME, registerNorthUpProtocol } from "./north-up";
 
 export const SOURCE_ID = "world";
+
+/** Raster overlays bundled beside the vector archive. */
+const OVERLAY_SOURCE_IDS = ["hillshade", "forest"] as const;
+const OVERLAY_ORIENTATIONS = ["south", "north"] as const;
 
 /** MapLibre extra zoom levels on top of the archive's native maximum. */
 const VIEW_MAX_ZOOM = 14;
@@ -32,10 +36,17 @@ interface VectorSourceSpec {
   bounds?: [number, number, number, number];
 }
 
+interface RasterSourceSpec {
+  type: "raster";
+  url?: string;
+  tiles?: string[];
+}
+
 setWorkerUrl(maplibreWorkerUrl);
 
 let protocol: Protocol | undefined;
 let northUpProtocolRegistered = false;
+const registeredOverlays = new Set<string>();
 
 function registerArchive(archive: MapArchive): void {
   if (!protocol) {
@@ -43,6 +54,31 @@ function registerArchive(archive: MapArchive): void {
     addProtocol("pmtiles", protocol.tile);
   }
   protocol.add(archive.pmtiles);
+}
+
+function overlayUrl(kind: (typeof OVERLAY_SOURCE_IDS)[number], orientation: Orientation): string {
+  return `pmtiles://${resolveAppUrl(`data/${kind}-${orientation}.pmtiles`)}`;
+}
+
+function registerOverlayArchives(): void {
+  if (!protocol) return;
+  for (const kind of OVERLAY_SOURCE_IDS) {
+    for (const orientation of OVERLAY_ORIENTATIONS) {
+      const path = `data/${kind}-${orientation}.pmtiles`;
+      if (registeredOverlays.has(path)) continue;
+      protocol.add(new PMTiles(resolveAppUrl(path)));
+      registeredOverlays.add(path);
+    }
+  }
+}
+
+function setOverlayUrls(style: StyleSpecification, orientation: Orientation): void {
+  for (const kind of OVERLAY_SOURCE_IDS) {
+    const source = style.sources[kind] as RasterSourceSpec | undefined;
+    if (source?.type === "raster") {
+      source.url = overlayUrl(kind, orientation);
+    }
+  }
 }
 
 export async function loadStyle(archive: MapArchive): Promise<StyleSpecification> {
@@ -60,6 +96,7 @@ export async function loadStyle(archive: MapArchive): Promise<StyleSpecification
   }
 
   style.glyphs = glyphUrlTemplate();
+  setOverlayUrls(style, "south");
   source.url = `pmtiles://${archive.url}`;
   source.minzoom = archive.header.minZoom;
   source.maxzoom = archive.header.maxZoom;
@@ -106,6 +143,7 @@ export function styleForOrientation(
     throw new Error(`style.json has no source named "${SOURCE_ID}".`);
   }
 
+  setOverlayUrls(style, "north");
   delete source.url;
   source.tiles = [`${NORTH_UP_SCHEME}://${archive.url}/{z}/{x}/{y}`];
   source.bounds = [
@@ -156,6 +194,7 @@ export function createMap(
   orientation: Orientation = "south",
 ): MapLibreMap {
   registerArchive(archive);
+  registerOverlayArchives();
   if (!northUpProtocolRegistered && protocol) {
     registerNorthUpProtocol(protocol);
     northUpProtocolRegistered = true;
