@@ -30,9 +30,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const PORT = Number(process.env.PREVIEW_PORT ?? 4179);
-const BASE_URL = `http://127.0.0.1:${PORT}/`;
-const MAP_URL = `${BASE_URL}?debug-map=1#map=6/38.9998/-105.543`;
-const MOBILE_URL = `${BASE_URL}?debug-map=1&mobile=1#map=6/38.9998/-105.543`;
+const EXTERNAL_BASE_URL = process.env.SMOKE_URL;
+const BASE_URL = EXTERNAL_BASE_URL ?? `http://127.0.0.1:${PORT}/`;
+const MAP_URL = new URL("?debug-map=1#map=6/38.9998/-105.543", BASE_URL).href;
+const MOBILE_URL = new URL(
+  "?debug-map=1&mobile=1#map=6/38.9998/-105.543",
+  BASE_URL,
+).href;
 const LAYER_IDS = [
   "boundary-admin1",
   "road-major",
@@ -203,24 +207,39 @@ function connectCdp(webSocketUrl) {
 }
 
 async function run() {
-  const viteBin = join(ROOT, "node_modules/vite/bin/vite.js");
-  if (!existsSync(viteBin)) {
-    fail("Vite is not installed. Run npm ci first.");
-  }
-  if (!existsSync(join(ROOT, "dist/index.html"))) {
-    fail("dist/ is missing. Run npm run build before the browser smoke test.");
+  const external = Boolean(EXTERNAL_BASE_URL);
+  if (external) {
+    console.log(`Testing deployed site: ${BASE_URL}`);
+  } else {
+    const viteBin = join(ROOT, "node_modules/vite/bin/vite.js");
+    if (!existsSync(viteBin)) {
+      fail("Vite is not installed. Run npm ci first.");
+    }
+    if (!existsSync(join(ROOT, "dist/index.html"))) {
+      fail("dist/ is missing. Run npm run build before the browser smoke test.");
+    }
   }
 
-  const preview = spawn(
-    process.execPath,
-    [viteBin, "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"],
-    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
-  );
+  const preview = external
+    ? undefined
+    : spawn(
+        process.execPath,
+        [
+          join(ROOT, "node_modules/vite/bin/vite.js"),
+          "preview",
+          "--port",
+          String(PORT),
+          "--strictPort",
+          "--host",
+          "127.0.0.1",
+        ],
+        { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
+      );
   let previewLog = "";
-  preview.stdout.on("data", (chunk) => {
+  preview?.stdout.on("data", (chunk) => {
     previewLog += chunk;
   });
-  preview.stderr.on("data", (chunk) => {
+  preview?.stderr.on("data", (chunk) => {
     previewLog += chunk;
   });
 

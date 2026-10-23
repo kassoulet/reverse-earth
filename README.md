@@ -223,7 +223,9 @@ actually rendered, then switches to north-up and back, and exercises keyboard
 selection of both a place result and a coordinate result. It also checks that
 the share URL keeps real geographic coordinates through orientation and search
 changes. It needs `world.pmtiles` in `dist/` and a local Chrome or Chromium
-(override the binary with `CHROME_PATH`).
+(override the binary with `CHROME_PATH`). Set
+`SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
+against a deployed Pages site instead of a local preview.
 
 ## Deploy to GitHub Pages
 
