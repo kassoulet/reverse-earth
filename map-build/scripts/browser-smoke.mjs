@@ -1255,6 +1255,12 @@ async function run() {
 }
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(message);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    // Surface the failed assertion in the Actions summary without requiring
+    // repository-admin access to the raw job log.
+    console.log(`::error title=Browser smoke test::${message.replace(/\n/g, "%0A")}`);
+  }
   process.exitCode = 1;
 });
