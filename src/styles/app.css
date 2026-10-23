@@ -420,7 +420,14 @@ body {
   background:
     radial-gradient(circle at 50% 40%, #f7f4ee 0%, var(--land) 62%, #e9e4da 100%);
   pointer-events: none;
-  animation: splash-out 650ms ease 2s forwards;
+  transition:
+    opacity 650ms ease,
+    visibility 0s linear 650ms;
+}
+
+.splash--hidden {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .splash__title {
@@ -432,13 +439,6 @@ body {
   line-height: 0.95;
   letter-spacing: -0.055em;
   text-align: center;
-}
-
-@keyframes splash-out {
-  to {
-    opacity: 0;
-    visibility: hidden;
-  }
 }
 
 .loading {

@@ -38,6 +38,15 @@ const searchStatus = requireElement<HTMLElement>("search-status");
 const infoButton = requireElement<HTMLButtonElement>("info-button");
 const infoPanel = requireElement<HTMLElement>("info-panel");
 const infoClose = requireElement<HTMLButtonElement>("info-close");
+const splash = document.getElementById("splash");
+
+const SPLASH_MIN_MS = 2_000;
+const SPLASH_MAX_MS = 4_000;
+const SPLASH_FADE_MS = 650;
+const splashStart = performance.now();
+let splashDismissed = false;
+let firstMapFrameReady = false;
+let splashMinTimer: number | undefined;
 
 const initialState = readUrlState(window.location.search, window.location.hash);
 
@@ -63,6 +72,39 @@ function requireElement<T extends HTMLElement>(id: string): T {
 function setLoading(visible: boolean): void {
   loading.hidden = !visible;
 }
+
+function dismissSplash(): void {
+  if (!splash || splashDismissed) return;
+  splashDismissed = true;
+  if (splashMinTimer !== undefined) {
+    window.clearTimeout(splashMinTimer);
+    splashMinTimer = undefined;
+  }
+
+  const element = splash;
+  element.classList.add("splash--hidden");
+  const remove = (): void => element.remove();
+  element.addEventListener("transitionend", remove, { once: true });
+  window.setTimeout(remove, SPLASH_FADE_MS + 150);
+}
+
+function markFirstMapFrameReady(): void {
+  if (firstMapFrameReady) return;
+  firstMapFrameReady = true;
+
+  const remaining = Math.max(
+    0,
+    SPLASH_MIN_MS - (performance.now() - splashStart),
+  );
+  if (remaining > 0) {
+    splashMinTimer = window.setTimeout(dismissSplash, remaining);
+  } else {
+    dismissSplash();
+  }
+}
+
+// Never let a slow or failed map hold the opening indefinitely.
+window.setTimeout(dismissSplash, SPLASH_MAX_MS);
 
 function hideDataState(): void {
   dataState.hidden = true;
@@ -107,6 +149,7 @@ function showDataState(
 }
 
 function showFailure(error: unknown, url: string): void {
+  dismissSplash();
   setControlsEnabled(false);
 
   if (error instanceof ArchiveProblem) {
@@ -228,6 +271,7 @@ async function boot(): Promise<void> {
     const markReady = (): void => {
       mapContainer.dataset.ready = "true";
       finishLoading();
+      markFirstMapFrameReady();
     };
     // `load` is not guaranteed to fire after this listener is attached when the
     // style is an in-memory object and the first frame is already rendered, so

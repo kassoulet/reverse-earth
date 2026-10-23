@@ -41,8 +41,9 @@ built and published, the viewer shows a clear “Map data not built yet” panel
 
 ## Map experience
 
-- A two-second “Reverse Earth” splash screen in Roboto Thin fades into the
-  fullscreen, responsive MapLibre viewer.
+- A “Reverse Earth” splash screen in Roboto Thin holds for at least two seconds
+  and until the first map frame, then fades into the fullscreen, responsive
+  MapLibre viewer. The opening is capped at four seconds.
 - Drag, wheel/trackpad zoom, touch drag, pinch zoom and keyboard navigation.
 - `+` / `−` controls (top right).
 - Native **z0–z6** data, overzoom to z14. No duplicated geometry is stored for

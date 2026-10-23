@@ -7,6 +7,13 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <meta name="theme-color" content="#f3f0e9" />
+    <script>
+      // Independent of the app bundle: never let a slow load hold the splash.
+      window.setTimeout(function () {
+        var splash = document.getElementById("splash");
+        if (splash) splash.classList.add("splash--hidden");
+      }, 4000);
+    </script>
     <meta
       name="description"
       content="Reverse Earth is a south-up world map: south is up, north is down, east and west stay where they belong."
@@ -21,6 +28,13 @@
       type="font/woff2"
       crossorigin
     />
+    <noscript>
+      <style>
+        #splash {
+          display: none;
+        }
+      </style>
+    </noscript>
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Reverse Earth" />
     <meta property="og:title" content="Reverse Earth — south-up world map" />
