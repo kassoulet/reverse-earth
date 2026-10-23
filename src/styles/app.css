@@ -417,8 +417,7 @@ body {
   place-items: center;
   padding: 24px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 40%, #f7f4ee 0%, var(--land) 62%, #e9e4da 100%);
+  background: transparent;
   pointer-events: none;
   transition:
     opacity 650ms ease,
