@@ -1,9 +1,18 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles/app.css";
-import { Map as MapLibreMap, type StyleSpecification } from "maplibre-gl";
+import {
+  Map as MapLibreMap,
+  type MapMouseEvent,
+  type StyleSpecification,
+} from "maplibre-gl";
 import { ArchiveProblem, openArchive, type MapArchive } from "./archive";
 import { formatBytes, resolvePmtilesUrl } from "./config";
-import { geoToDisplay } from "./coordinates";
+import { displayToGeo, geoToDisplay, wrapLongitude } from "./coordinates";
+import {
+  INSPECT_LAYER_IDS,
+  buildFeatureCard,
+  type FeatureCardModel,
+} from "./feature-card";
 import {
   createMap,
   loadStyle,
@@ -12,6 +21,11 @@ import {
 } from "./map";
 import type { SearchResult } from "./search";
 import { SearchControl } from "./search-control";
+import {
+  SHARE_CAPTION_LAYER_IDS,
+  shareCaptionForFeatures,
+  shareTextForCaption,
+} from "./share-caption";
 import {
   readUrlState,
   updateUrl,
@@ -28,6 +42,8 @@ const stateUrl = requireElement<HTMLElement>("data-state-url");
 const retryButton = requireElement<HTMLButtonElement>("retry");
 const zoomInButton = requireElement<HTMLButtonElement>("zoom-in");
 const zoomOutButton = requireElement<HTMLButtonElement>("zoom-out");
+const shareButton = requireElement<HTMLButtonElement>("share-view");
+const shareStatus = requireElement<HTMLElement>("share-status");
 const mapContainer = requireElement<HTMLElement>("map");
 const orientationSouth = requireElement<HTMLButtonElement>("orientation-south");
 const orientationNorth = requireElement<HTMLButtonElement>("orientation-north");
@@ -38,6 +54,12 @@ const searchStatus = requireElement<HTMLElement>("search-status");
 const infoButton = requireElement<HTMLButtonElement>("info-button");
 const infoPanel = requireElement<HTMLElement>("info-panel");
 const infoClose = requireElement<HTMLButtonElement>("info-close");
+const featureCard = requireElement<HTMLElement>("feature-card");
+const featureCardClose = requireElement<HTMLButtonElement>("feature-card-close");
+const featureCardEyebrow = requireElement<HTMLElement>("feature-card-eyebrow");
+const featureCardTitle = requireElement<HTMLElement>("feature-card-title");
+const featureCardSubtitle = requireElement<HTMLElement>("feature-card-subtitle");
+const featureCardFacts = requireElement<HTMLDListElement>("feature-card-facts");
 const splash = document.getElementById("splash");
 
 const SPLASH_MIN_MS = 2_000;
@@ -47,6 +69,7 @@ const splashStart = performance.now();
 let splashDismissed = false;
 let firstMapFrameReady = false;
 let splashMinTimer: number | undefined;
+let shareStatusTimer: number | undefined;
 
 const initialState = readUrlState(window.location.search, window.location.hash);
 
@@ -113,6 +136,7 @@ function hideDataState(): void {
 function setControlsEnabled(enabled: boolean): void {
   orientationSouth.disabled = !enabled;
   orientationNorth.disabled = !enabled;
+  shareButton.disabled = !enabled;
   search.setEnabled(enabled);
 }
 
@@ -210,8 +234,171 @@ function syncUrl(): void {
   );
 }
 
+function showShareStatus(message: string): void {
+  if (shareStatusTimer !== undefined) window.clearTimeout(shareStatusTimer);
+  shareStatus.textContent = message;
+  shareStatus.hidden = false;
+  shareStatusTimer = window.setTimeout(() => {
+    shareStatus.hidden = true;
+    shareStatus.textContent = "";
+    shareStatusTimer = undefined;
+  }, 2400);
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the legacy clipboard path when permission is denied.
+    }
+  }
+
+  const active = document.activeElement;
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "-9999px";
+  document.body.append(area);
+  area.focus({ preventScroll: true });
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  area.remove();
+  if (active instanceof HTMLElement) active.focus({ preventScroll: true });
+  return copied;
+}
+
+function currentShareCaption(): string | null {
+  if (!map) return null;
+  const center = map.project(map.getCenter());
+  const radius = 120;
+  const features = map.queryRenderedFeatures(
+    [
+      [center.x - radius, center.y - radius],
+      [center.x + radius, center.y + radius],
+    ],
+    { layers: SHARE_CAPTION_LAYER_IDS },
+  );
+  return shareCaptionForFeatures(
+    features.map((feature) => ({
+      layerId: feature.layer?.id ?? "",
+      properties: feature.properties ?? {},
+    })),
+  );
+}
+
+async function shareCurrentView(): Promise<void> {
+  if (!map) return;
+  // Keep the address bar in step before handing the URL to the share sheet or
+  // clipboard, so both always describe the view the visitor is looking at.
+  syncUrl();
+  const url = window.location.href;
+  const text = shareTextForCaption(currentShareCaption(), orientation);
+
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share({
+        title: "Reverse Earth",
+        text,
+        url,
+      });
+      showShareStatus("Link shared");
+      return;
+    } catch (error) {
+      // A dismissed share sheet is not an error worth reporting.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    }
+  }
+
+  showShareStatus(
+    (await copyText(url)) ? "Link copied" : "Could not copy the link",
+  );
+}
+
+function hideFeatureCard(restoreFocus = false): void {
+  if (featureCard.hidden) return;
+  featureCard.hidden = true;
+  if (restoreFocus) map?.getCanvas().focus({ preventScroll: true });
+}
+
+function showFeatureCard(card: FeatureCardModel): void {
+  featureCardEyebrow.textContent = card.eyebrow;
+  featureCardTitle.textContent = card.title;
+  featureCardSubtitle.textContent = card.subtitle;
+  featureCardFacts.replaceChildren();
+  for (const fact of card.facts) {
+    const term = document.createElement("dt");
+    term.textContent = fact.label;
+    const value = document.createElement("dd");
+    value.textContent = fact.value;
+    featureCardFacts.append(term, value);
+  }
+  featureCard.hidden = false;
+  featureCardClose.focus({ preventScroll: true });
+}
+
+function inspectMapFeature(event: MapMouseEvent): void {
+  if (!map) return;
+
+  const point = map.project(event.lngLat);
+  const query = { layers: INSPECT_LAYER_IDS };
+  let features = map.queryRenderedFeatures(point, query);
+  if (features.length === 0) {
+    // Dots and labels are small; give the click a little forgiveness.
+    features = map.queryRenderedFeatures(
+      [
+        [point.x - 6, point.y - 6],
+        [point.x + 6, point.y + 6],
+      ],
+      query,
+    );
+  }
+
+  const feature = features[0];
+  const layerId = feature?.layer?.id;
+  if (!feature || !layerId) {
+    hideFeatureCard(true);
+    return;
+  }
+
+  const longitude = wrapLongitude(event.lngLat.lng);
+  const latitude = event.lngLat.lat;
+  let coordinate: { longitude: number; latitude: number };
+  try {
+    if (orientation === "north") {
+      coordinate = { longitude, latitude };
+    } else {
+      const [realLongitude, realLatitude] = displayToGeo(longitude, latitude);
+      coordinate = { longitude: realLongitude, latitude: realLatitude };
+    }
+  } catch {
+    hideFeatureCard(true);
+    return;
+  }
+
+  const card = buildFeatureCard(
+    layerId,
+    feature.properties ?? {},
+    coordinate,
+  );
+  if (card) {
+    showFeatureCard(card);
+  } else {
+    hideFeatureCard(true);
+  }
+}
+
 function chooseOrientation(next: Orientation): void {
   if (!map || !archive || !baseStyle || next === orientation) return;
+  hideFeatureCard();
   setMapOrientation(map, archive, baseStyle, orientation, next);
   orientation = next;
   updateOrientationUI();
@@ -220,6 +407,7 @@ function chooseOrientation(next: Orientation): void {
 
 function flyToResult(result: SearchResult): void {
   if (!map) return;
+  hideFeatureCard();
   const center: [number, number] =
     orientation === "north"
       ? [result.longitude, result.latitude]
@@ -233,6 +421,7 @@ function flyToResult(result: SearchResult): void {
 
 async function boot(): Promise<void> {
   hideDataState();
+  hideFeatureCard();
   delete mapContainer.dataset.ready;
   setLoading(true);
   setControlsEnabled(false);
@@ -258,6 +447,7 @@ async function boot(): Promise<void> {
       });
     }
     map.on("moveend", syncUrl);
+    map.on("click", inspectMapFeature);
     updateOrientationUI();
     syncUrl();
     setControlsEnabled(true);
@@ -327,7 +517,12 @@ zoomOutButton.addEventListener("click", () => {
   map?.zoomOut({ duration: 250 });
 });
 
+shareButton.addEventListener("click", () => {
+  void shareCurrentView();
+});
+
 function setInfoOpen(open: boolean, restoreFocus = false): void {
+  if (open) hideFeatureCard();
   infoPanel.hidden = !open;
   infoButton.setAttribute("aria-expanded", String(open));
   if (open) {
@@ -343,8 +538,14 @@ infoButton.addEventListener("click", () => {
 infoClose.addEventListener("click", () => {
   setInfoOpen(false, true);
 });
+featureCardClose.addEventListener("click", () => {
+  hideFeatureCard(true);
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !infoPanel.hidden) {
+  if (event.key !== "Escape") return;
+  if (!featureCard.hidden) {
+    hideFeatureCard(true);
+  } else if (!infoPanel.hidden) {
     setInfoOpen(false, true);
   }
 });

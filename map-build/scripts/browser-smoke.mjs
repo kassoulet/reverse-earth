@@ -366,6 +366,80 @@ async function run() {
       fail(`Unexpected initial URL state: ${JSON.stringify(initialUrl)}`);
     }
 
+    await cdp.evaluate(`(() => {
+      window.__sharedData = null;
+      Object.defineProperty(navigator, "share", {
+        configurable: true,
+        value: async (data) => {
+          window.__sharedData = data;
+        },
+      });
+      document.querySelector("#share-view")?.click();
+      return true;
+    })()`);
+    const shared = await cdp.waitFor(
+      `(() => {
+        const status = document.querySelector("#share-status");
+        if (!status || status.hidden || !status.textContent) return null;
+        return {
+          status: status.textContent,
+          data: window.__sharedData,
+          url: window.location.href,
+        };
+      })()`,
+      "native share feedback",
+      3_000,
+    );
+    if (shared.status !== "Link shared") {
+      fail(`Unexpected native share feedback: ${JSON.stringify(shared)}`);
+    }
+    if (shared.data?.url !== shared.url || !shared.url.includes("#map=")) {
+      fail(`The share sheet received the wrong view URL: ${JSON.stringify(shared)}`);
+    }
+    if (
+      typeof shared.data?.text !== "string" ||
+      !shared.data.text.startsWith("South is up over ") ||
+      shared.data.text.length <= "South is up over .".length
+    ) {
+      fail(`The share sheet received no place caption: ${JSON.stringify(shared)}`);
+    }
+
+    await cdp.evaluate(`(() => {
+      window.__copiedText = null;
+      Object.defineProperty(navigator, "share", {
+        configurable: true,
+        value: undefined,
+      });
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text) => {
+            window.__copiedText = text;
+          },
+        },
+      });
+      document.querySelector("#share-view")?.click();
+      return true;
+    })()`);
+    const copied = await cdp.waitFor(
+      `(() => {
+        const status = document.querySelector("#share-status");
+        if (!status || status.hidden || status.textContent !== "Link copied") {
+          return null;
+        }
+        return {
+          status: status.textContent,
+          text: window.__copiedText,
+          url: window.location.href,
+        };
+      })()`,
+      "clipboard share fallback",
+      3_000,
+    );
+    if (copied.text !== copied.url || !copied.url.includes("#map=")) {
+      fail(`The clipboard fallback copied the wrong URL: ${JSON.stringify(copied)}`);
+    }
+
     await cdp.evaluate('document.querySelector("#orientation-north")?.click()');
     const northUp = await cdp.waitFor(
       `(() => {
@@ -655,6 +729,7 @@ async function run() {
           "#orientation-north",
           "#zoom-in",
           "#zoom-out",
+          "#share-view",
           "#info-button",
         ];
         const controls = selectors.map((selector) => {
@@ -716,6 +791,214 @@ async function run() {
     }
     if (mobile.admin1 === 0) fail("The mobile viewport rendered no Admin 1 boundaries.");
 
+    const findFeaturePoint = async (layers, label) =>
+      cdp.waitFor(
+        `(() => {
+          const map = window.__southUpMap;
+          if (!map || !map.loaded()) return null;
+          const requested = ${JSON.stringify(layers)};
+          const allLayers = [
+            "place-country",
+            "place-capital-dot",
+            "place-capital",
+            "place-city-dot",
+            "place-city",
+            "place-town",
+            "place-region",
+            "airport-dot",
+            "airport-label",
+            "port-dot",
+            "port-label",
+            "park",
+          ];
+          const features = map.queryRenderedFeatures({ layers: allLayers });
+          for (const feature of features) {
+            const name = feature.properties?.name;
+            if (!name || !requested.includes(feature.layer?.id)) continue;
+            const geometry = feature.geometry;
+            const coordinates = [];
+            if (geometry.type === "Point") {
+              coordinates.push(geometry.coordinates);
+            } else if (geometry.type === "MultiPoint") {
+              coordinates.push(...geometry.coordinates);
+            } else if (geometry.type === "Polygon") {
+              coordinates.push(...geometry.coordinates[0]);
+            } else if (geometry.type === "MultiPolygon") {
+              for (const polygon of geometry.coordinates) {
+                coordinates.push(...polygon[0]);
+              }
+            }
+            for (const coordinate of coordinates) {
+              const point = map.project(coordinate);
+              if (
+                point.x < 24 ||
+                point.y < 130 ||
+                point.x > innerWidth - 24 ||
+                point.y > innerHeight - 120
+              ) {
+                continue;
+              }
+              const exact = map.queryRenderedFeatures(point, { layers: allLayers });
+              const hits = exact.length
+                ? exact
+                : map.queryRenderedFeatures(
+                    [
+                      [point.x - 6, point.y - 6],
+                      [point.x + 6, point.y + 6],
+                    ],
+                    { layers: allLayers },
+                  );
+              if (
+                hits[0]?.layer?.id !== feature.layer?.id ||
+                hits[0]?.properties?.name !== name
+              ) {
+                continue;
+              }
+              return {
+                x: Math.round(point.x),
+                y: Math.round(point.y),
+                name,
+                layer: feature.layer?.id,
+              };
+            }
+          }
+          return null;
+        })()`,
+        `${label} rendered feature`,
+        15_000,
+      );
+
+    const clickMapAt = async (point) => {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: point.x,
+        y: point.y,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: point.x,
+        y: point.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: point.x,
+        y: point.y,
+        button: "left",
+        clickCount: 1,
+      });
+    };
+
+    const inspectFeature = async (layers, eyebrow) => {
+      const point = await findFeaturePoint(layers, eyebrow.toLowerCase());
+      await clickMapAt(point);
+      const card = await cdp.waitFor(
+        `(() => {
+          const element = document.querySelector("#feature-card");
+          if (!element || element.hidden) return null;
+          const terms = [...document.querySelectorAll("#feature-card-facts dt")];
+          const values = [...document.querySelectorAll("#feature-card-facts dd")];
+          const rect = element.getBoundingClientRect();
+          return {
+            title: document.querySelector("#feature-card-title")?.textContent ?? "",
+            eyebrow: document.querySelector("#feature-card-eyebrow")?.textContent ?? "",
+            subtitle: document.querySelector("#feature-card-subtitle")?.textContent ?? "",
+            facts: terms.map((term, index) => ({
+              label: term.textContent,
+              value: values[index]?.textContent ?? "",
+            })),
+            focused: document.activeElement?.id ?? null,
+            rect: {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height,
+            },
+            viewport: { width: innerWidth, height: innerHeight },
+          };
+        })()`,
+        `${eyebrow} card`,
+        5_000,
+      );
+      if (card.title !== point.name) {
+        fail(`The ${eyebrow} card has the wrong title: ${JSON.stringify({ point, card })}`);
+      }
+      if (card.eyebrow !== eyebrow) {
+        fail(`Expected a ${eyebrow} card, got ${JSON.stringify(card)}`);
+      }
+      if (card.focused !== "feature-card-close") {
+        fail(`The ${eyebrow} card did not move focus to its close button.`);
+      }
+      if (
+        card.rect.width <= 0 ||
+        card.rect.height <= 0 ||
+        card.rect.left < -1 ||
+        card.rect.top < -1 ||
+        card.rect.right > card.viewport.width + 1 ||
+        card.rect.bottom > card.viewport.height + 1
+      ) {
+        fail(`The ${eyebrow} card is outside the viewport: ${JSON.stringify(card.rect)}`);
+      }
+      return card;
+    };
+
+    const closeFeatureCard = async () => {
+      await cdp.evaluate('document.querySelector("#feature-card-close")?.click()');
+      await cdp.waitFor(
+        'document.querySelector("#feature-card")?.hidden === true',
+        "feature card closed",
+        2_000,
+      );
+    };
+
+    const placeCard = await inspectFeature(
+      ["place-capital", "place-city", "place-town", "place-region"],
+      "Place",
+    );
+    await closeFeatureCard();
+    const airportCard = await inspectFeature(
+      ["airport-dot", "airport-label"],
+      "Airport",
+    );
+    await closeFeatureCard();
+    const parkCard = await inspectFeature(["park"], "Park");
+    await closeFeatureCard();
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [4.4, -51.9], zoom: 6 });
+      return true;
+    })()`);
+    const portCard = await inspectFeature(["port-dot", "port-label"], "Port");
+    await closeFeatureCard();
+
+    await cdp.evaluate('document.querySelector("#orientation-north")?.click()');
+    await cdp.waitFor(
+      'document.querySelector("#map")?.dataset.orientation === "north"',
+      "north-up card view",
+      20_000,
+    );
+    const northPortCard = await inspectFeature(
+      ["port-dot", "port-label"],
+      "Port",
+    );
+    const northCoordinates = northPortCard.facts.find(
+      (fact) => fact.label === "Coordinates",
+    )?.value;
+    if (!northCoordinates?.includes("° N")) {
+      fail(`North-up card has the wrong real coordinates: ${JSON.stringify(northPortCard)}`);
+    }
+    await cdp.evaluate(
+      'document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))',
+    );
+    await cdp.waitFor(
+      'document.querySelector("#feature-card")?.hidden === true',
+      "feature card closed with Escape",
+      2_000,
+    );
+
     const failures = cdp.failures.filter((failure) => !failure.includes("ERR_ABORTED"));
     const pmtilesResponses = cdp.responses.filter((response) =>
       response.url.includes("world.pmtiles"),
@@ -743,7 +1026,19 @@ async function run() {
         place: placeUrl,
         coordinate: coordinateUrl,
       },
+      share: {
+        native: shared.status,
+        clipboard: copied.status,
+        caption: shared.data?.text,
+      },
       mobile,
+      featureCards: {
+        place: placeCard,
+        airport: airportCard,
+        port: portCard,
+        park: parkCard,
+        northPort: northPortCard,
+      },
 
       pmtilesRequests: pmtilesResponses.length,
       pmtilesStatuses: [...new Set(pmtilesResponses.map((response) => response.status))],

@@ -60,6 +60,12 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   the browser.
 - An information control explains the orientation, the data source and the
   coordinate contract.
+- A share control in the top-right controls sends the current view with the
+  native share sheet where available and copies the URL to the clipboard
+  otherwise. The share text names a nearby rendered city, town, region or
+  country, and both paths use the same real-coordinate hash as the address bar.
+- Click a place, airport, port or park for a compact card with its category,
+  population or IATA code where available, and real-world coordinates.
 
 Rotation and pitch are deliberately disabled so the plan view stays
 unambiguous. The map still behaves like a conventional pan/zoom viewer in every
@@ -228,10 +234,14 @@ transform. The browser smoke test starts the built site in headless Chrome and
 asserts that the z6 Admin 1 boundaries, urban areas, parks, airports, roads,
 railways and region labels are actually rendered, then switches to north-up and
 back, and exercises keyboard selection of both a place result and a coordinate
-result. It also checks that
-the share URL keeps real geographic coordinates through orientation and search
-changes. It needs `world.pmtiles` in `dist/` and a local Chrome or Chromium
-(override the binary with `CHROME_PATH`). Set
+result. It also checks that the share control passes the current URL to the
+native share sheet and, when sharing is unavailable, copies it to the
+clipboard, and that the share text names the nearby place. Click-to-inspect
+cards are opened for a place, airport, park and port, and the card's real-world
+coordinates are checked in both orientations. And it checks that the share URL
+keeps real geographic coordinates through orientation and search changes. It
+needs `world.pmtiles` in `dist/` and a local Chrome or Chromium (override the
+binary with `CHROME_PATH`). Set
 `SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
 against a deployed Pages site instead of a local preview.
 
@@ -297,6 +307,8 @@ src/
   search-control.ts         accessible search combobox
   archive.ts                PMTiles preflight + south_up contract
   coordinates.ts            geoToDisplay / displayToGeo
+  feature-card.ts           click-to-inspect card models and formatting
+  share-caption.ts          nearby place/region caption for the share sheet
   styles/app.css            minimal UI
 public/
   favicon.svg, favicon.ico  browser icon
