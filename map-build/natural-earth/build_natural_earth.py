@@ -9,6 +9,7 @@ layers into PMTiles. No OSM extract and no Planetiler run are required.
 Layer schema (shared with any future filtered OSM source):
 
     land       polygons
+    glacier    polygons (ice caps and glaciers)
     water      polygons (lakes)
     urban      polygons (Natural Earth urban areas at z5-z6)
     park       polygons (Natural Earth parks and protected areas at z5-z6)
@@ -18,6 +19,9 @@ Layer schema (shared with any future filtered OSM source):
     railway    lines (selected railways at z5-z6)
     airport    points (major airports at z5-z6)
     port       points (major ports at z5-z6)
+    marine     points (ocean, sea, gulf, bay and strait labels)
+    physio     points (desert, mountain range and plain labels)
+    peak       points (mountains, passes and depressions at z5-z6)
     place      points (countries, capitals, cities, towns, selected Admin 1 regions)
 
 The tile grid is a normal XYZ grid in display space. South-up comes from
@@ -168,6 +172,22 @@ SOURCES: dict[str, tuple[str, str]] = {
         "a0962d7866060ae3e24df255f6d662389ac9ba7e0df40cf329c2281190b861e6",
         f"{NE_BASE}/ne_10m_railroads.geojson",
     ),
+    "ne_10m_glaciated_areas.geojson": (
+        "04fd2303d5f0ece2cf482af19d06731d745db9690501d7b0a2a4b7fe23a7726f",
+        f"{NE_BASE}/ne_10m_glaciated_areas.geojson",
+    ),
+    "ne_10m_geography_marine_polys.geojson": (
+        "53f865e8ffa966cdd402145c82c5cd14ee7ce974cd0eb9a3f59f03a4cfd2d66c",
+        f"{NE_BASE}/ne_10m_geography_marine_polys.geojson",
+    ),
+    "ne_10m_geography_regions_elevation_points.geojson": (
+        "f98a16867867146ec4146d6d4b18c823eeedb2825947de666116cf9a4e3f43cb",
+        f"{NE_BASE}/ne_10m_geography_regions_elevation_points.geojson",
+    ),
+    "ne_10m_geography_regions_polys.geojson": (
+        "b7b26e50ea917d3696aec87f932def2bf5f890f5770e441d59c162c6f4c92a77",
+        f"{NE_BASE}/ne_10m_geography_regions_polys.geojson",
+    ),
 }
 
 SCALE_BY_ZOOM = {
@@ -203,9 +223,20 @@ URBAN_RANK_BY_ZOOM = {5: 5, 6: 7}
 PARK_MIN_ZOOM = 5
 AIRPORT_RANK_BY_ZOOM = {5: 4, 6: 6}
 PORT_RANK_BY_ZOOM = {5: 4, 6: 5}
+GLACIER_RANK_BY_ZOOM = {0: 0, 1: 0, 2: 1, 3: 3, 4: 4, 5: 5, 6: 6}
+MARINE_RANK_BY_ZOOM = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8}
+PHYSIO_RANK_BY_ZOOM = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
+PHYSIO_CLASS_BY_FEATURECLA = {
+    "Range/mtn": "range",
+    "Desert": "desert",
+    "Plain": "plain",
+}
+PEAK_MIN_ZOOM = 5
+PEAK_RANK_BY_ZOOM = {5: 2, 6: 3}
 
 LAYER_ORDER = (
     "land",
+    "glacier",
     "water",
     "urban",
     "park",
@@ -215,6 +246,9 @@ LAYER_ORDER = (
     "railway",
     "airport",
     "port",
+    "marine",
+    "physio",
+    "peak",
     "place",
 )
 
@@ -442,6 +476,28 @@ def build_feature(prepared: PreparedSource, geometry: BaseGeometry, props: dict[
             rank=rank,
             min_zoom=number_value(props.get("min_zoom"), 99),
         )
+    if layer == "glacier":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={"class": "glacier", "rank": rank},
+            rank=rank,
+            min_zoom=number_value(props.get("min_zoom"), 0),
+        )
+    if layer == "peak":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={
+                "name": string_value(props.get("name")) or string_value(props.get("name_en")),
+                "class": (string_value(props.get("featurecla")) or "mountain").lower(),
+                "elevation": number_value(props.get("elevation"), 0),
+                "rank": rank,
+                "country": string_value(props.get("nation1")),
+            },
+            rank=rank,
+            min_zoom=number_value(props.get("min_zoom"), PEAK_MIN_ZOOM),
+        )
     if layer == "place":
         return build_place(geometry, props)
     if layer == "water":
@@ -577,6 +633,18 @@ def string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def display_name(value: Any) -> str:
+    """Normalise Natural Earth's occasional all-caps names for labels."""
+    name = string_value(value)
+    if not name.isupper():
+        return name
+    small_words = {"of", "the", "and", "de", "del", "la", "le", "du", "des"}
+    return " ".join(
+        word if index > 0 and word in small_words else word.capitalize()
+        for index, word in enumerate(name.lower().split())
+    )
+
+
 def number_value(value: Any, default: float) -> float:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else default
 
@@ -612,6 +680,127 @@ def country_labels(cache_dir: Path) -> list[Feature]:
             )
         )
     return features
+
+
+def marine_labels(cache_dir: Path) -> PreparedSource:
+    """Turn marine polygons into one label anchor each.
+
+    An ocean polygon can span half the world, so the label is placed at a
+    representative interior point rather than at a bounding-box centre (which
+    could fall on land). Natural Earth's ``min_label`` threshold doubles as
+    the minimum zoom for the feature.
+    """
+    prepared = PreparedSource(layer="marine", scale="10m")
+    skipped = 0
+    for raw in load_geojson(cache_dir / "ne_10m_geography_marine_polys.geojson"):
+        geometry_data = raw.get("geometry")
+        if not isinstance(geometry_data, dict):
+            skipped += 1
+            continue
+        props = raw.get("properties") or {}
+        name = display_name(props.get("name")) or display_name(props.get("name_en"))
+        if not name:
+            skipped += 1
+            continue
+        try:
+            source_geometry = shape(geometry_data)
+            projected = transform(source_geometry, display_project)
+            projected = normalise_geometry(projected)
+            if projected is None:
+                skipped += 1
+                continue
+            anchor = projected.representative_point()
+        except Exception as error:  # noqa: BLE001 - report malformed source features
+            LOG.warning("Skipping invalid marine feature: %s", error)
+            skipped += 1
+            continue
+
+        rank = number_value(props.get("scalerank"), 99)
+        prepared.features.append(
+            Feature(
+                geometry=anchor,
+                properties={
+                    "name": name,
+                    "class": (string_value(props.get("featurecla")) or "sea").lower(),
+                    "rank": rank,
+                },
+                rank=rank,
+                # Natural Earth's min_label is one zoom later than the first
+                # zoom where the label is useful on this map.
+                min_zoom=max(0.0, number_value(props.get("min_label"), 99) - 1.0),
+            )
+        )
+
+    prepared.skipped = skipped
+    prepared.tree = STRtree([feature.geometry for feature in prepared.features])
+    LOG.info(
+        "marine 10m: %s features (%s skipped)",
+        len(prepared.features),
+        skipped,
+    )
+    return prepared
+
+
+def physical_region_labels(cache_dir: Path) -> PreparedSource:
+    """Place labels for deserts, mountain ranges and plains.
+
+    Natural Earth stores these as polygons. A representative interior point
+    gives a stable label anchor without adding the full polygon geometry to
+    every tile. ``NE_ID`` removes split duplicates of the same range.
+    """
+    prepared = PreparedSource(layer="physio", scale="10m")
+    seen: set[Any] = set()
+    skipped = 0
+    for raw in load_geojson(cache_dir / "ne_10m_geography_regions_polys.geojson"):
+        props = raw.get("properties") or {}
+        kind = PHYSIO_CLASS_BY_FEATURECLA.get(string_value(props.get("FEATURECLA")))
+        if kind is None:
+            continue
+        ne_id = props.get("NE_ID")
+        if ne_id is not None:
+            if ne_id in seen:
+                continue
+            seen.add(ne_id)
+
+        geometry_data = raw.get("geometry")
+        if not isinstance(geometry_data, dict):
+            skipped += 1
+            continue
+        name = display_name(props.get("NAME_EN")) or display_name(props.get("NAME"))
+        if not name:
+            skipped += 1
+            continue
+        try:
+            source_geometry = shape(geometry_data)
+            projected = transform(source_geometry, display_project)
+            projected = normalise_geometry(projected)
+            if projected is None:
+                skipped += 1
+                continue
+            anchor = projected.representative_point()
+        except Exception as error:  # noqa: BLE001 - report malformed source features
+            LOG.warning("Skipping invalid physical region feature: %s", error)
+            skipped += 1
+            continue
+
+        rank = number_value(props.get("SCALERANK"), 99)
+        prepared.features.append(
+            Feature(
+                geometry=anchor,
+                properties={"name": name, "class": kind, "rank": rank},
+                rank=rank,
+                min_zoom=max(0.0, number_value(props.get("MIN_LABEL"), 99) - 1.0),
+            )
+        )
+
+    prepared.skipped = skipped
+    prepared.tree = STRtree([feature.geometry for feature in prepared.features])
+    LOG.info(
+        "physio 10m: %s features (%s skipped)",
+        len(prepared.features),
+        skipped,
+    )
+    return prepared
 
 
 def admin1_labels(cache_dir: Path) -> list[Feature]:
@@ -712,6 +901,34 @@ def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
     if source.layer == "railway":
         limit = RAILWAY_RANK_BY_ZOOM.get(zoom, -1)
         return [feature for feature in source.features if feature.rank <= limit]
+    if source.layer == "glacier":
+        limit = GLACIER_RANK_BY_ZOOM.get(zoom, -1)
+        return [
+            feature
+            for feature in source.features
+            if feature.rank <= limit and feature.min_zoom <= zoom
+        ]
+    if source.layer == "marine":
+        limit = MARINE_RANK_BY_ZOOM.get(zoom, -1)
+        return [
+            feature
+            for feature in source.features
+            if feature.rank <= limit and feature.min_zoom <= zoom
+        ]
+    if source.layer == "physio":
+        limit = PHYSIO_RANK_BY_ZOOM.get(zoom, -1)
+        return [
+            feature
+            for feature in source.features
+            if feature.rank <= limit and feature.min_zoom <= zoom
+        ]
+    if source.layer == "peak":
+        limit = PEAK_RANK_BY_ZOOM.get(zoom, -1)
+        return [
+            feature
+            for feature in source.features
+            if feature.rank <= limit and feature.min_zoom <= zoom
+        ]
     return source.features
 
 
@@ -735,8 +952,8 @@ def prepare_zoom_sources(
     scale = SCALE_BY_ZOOM[zoom]
     result: dict[str, tuple[list[Feature], STRtree | None]] = {}
 
-    for layer in ("land", "water", "boundary", "waterway"):
-        source = loaded[(layer, scale)]
+    for layer in ("land", "glacier", "water", "boundary", "waterway"):
+        source = loaded[(layer, "10m" if layer == "glacier" else scale)]
         features = filtered_features(source, zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
 
@@ -762,6 +979,10 @@ def prepare_zoom_sources(
         features = filtered_features(loaded[(layer, "10m")], zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
 
+    for layer in ("marine", "physio", "peak"):
+        features = filtered_features(loaded[(layer, "10m")], zoom)
+        result[layer] = (features, STRtree([feature.geometry for feature in features]))
+
     places: list[Feature] = []
     place_source = loaded[("place", scale)]
     places.extend(filtered_features(place_source, zoom))
@@ -777,7 +998,7 @@ def prepare_zoom_sources(
 
 
 def extract_geometry(geometry: BaseGeometry, layer: str) -> BaseGeometry | None:
-    if layer in ("land", "water", "urban", "park"):
+    if layer in ("land", "glacier", "water", "urban", "park"):
         allowed = ("Polygon", "MultiPolygon")
     elif layer in ("boundary", "waterway", "road", "railway"):
         allowed = ("LineString", "MultiLineString")
@@ -832,7 +1053,7 @@ def encode_tile(
         for index in tree.query(clip_box):
             feature = features[int(index)]
             geometry = feature.geometry
-            if layer in ("place", "airport", "port"):
+            if layer in ("place", "airport", "port", "marine", "physio", "peak"):
                 if not clip_box.covers(geometry):
                     continue
                 clipped = geometry
@@ -849,7 +1070,7 @@ def encode_tile(
                     clipped,
                     [scale, 0, 0, scale, -west * scale, -north * scale],
                 )
-                if layer in ("land", "water", "urban", "park"):
+                if layer in ("land", "glacier", "water", "urban", "park"):
                     tile_geometry = tile_geometry.simplify(2.0, preserve_topology=True)
                 elif layer in ("boundary", "waterway", "road", "railway"):
                     tile_geometry = tile_geometry.simplify(1.0, preserve_topology=False)
@@ -947,6 +1168,17 @@ def build(
     loaded[("port", "10m")] = load_layer(
         cache_dir, "port", "ne_10m_ports", "10m"
     )
+    loaded[("glacier", "10m")] = load_layer(
+        cache_dir, "glacier", "ne_10m_glaciated_areas", "10m"
+    )
+    loaded[("marine", "10m")] = marine_labels(cache_dir)
+    loaded[("physio", "10m")] = physical_region_labels(cache_dir)
+    loaded[("peak", "10m")] = load_layer(
+        cache_dir,
+        "peak",
+        "ne_10m_geography_regions_elevation_points",
+        "10m",
+    )
     loaded[("country-labels", "110m")] = PreparedSource(
         layer="country-labels", scale="110m", features=country_labels(cache_dir)
     )
@@ -1034,8 +1266,18 @@ def build_metadata(minzoom: int, maxzoom: int, counts: dict[str, int]) -> dict[s
     fields = {
         "land": {"class": "String"},
         "water": {"name": "String", "class": "String", "rank": "Number"},
+        "glacier": {"class": "String", "rank": "Number"},
         "urban": {"class": "String", "rank": "Number"},
         "park": {"name": "String", "type": "String", "rank": "Number"},
+        "marine": {"name": "String", "class": "String", "rank": "Number"},
+        "physio": {"name": "String", "class": "String", "rank": "Number"},
+        "peak": {
+            "name": "String",
+            "class": "String",
+            "elevation": "Number",
+            "rank": "Number",
+            "country": "String",
+        },
         "airport": {
             "name": "String",
             "type": "String",

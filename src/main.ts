@@ -54,6 +54,9 @@ const searchStatus = requireElement<HTMLElement>("search-status");
 const infoButton = requireElement<HTMLButtonElement>("info-button");
 const infoPanel = requireElement<HTMLElement>("info-panel");
 const infoClose = requireElement<HTMLButtonElement>("info-close");
+const legendButton = requireElement<HTMLButtonElement>("legend-button");
+const legendPanel = requireElement<HTMLElement>("legend-panel");
+const legendClose = requireElement<HTMLButtonElement>("legend-close");
 const featureCard = requireElement<HTMLElement>("feature-card");
 const featureCardClose = requireElement<HTMLButtonElement>("feature-card-close");
 const featureCardEyebrow = requireElement<HTMLElement>("feature-card-eyebrow");
@@ -522,7 +525,10 @@ shareButton.addEventListener("click", () => {
 });
 
 function setInfoOpen(open: boolean, restoreFocus = false): void {
-  if (open) hideFeatureCard();
+  if (open) {
+    hideFeatureCard();
+    if (!legendPanel.hidden) setLegendOpen(false);
+  }
   infoPanel.hidden = !open;
   infoButton.setAttribute("aria-expanded", String(open));
   if (open) {
@@ -532,11 +538,31 @@ function setInfoOpen(open: boolean, restoreFocus = false): void {
   }
 }
 
+function setLegendOpen(open: boolean, restoreFocus = false): void {
+  if (open) {
+    hideFeatureCard();
+    if (!infoPanel.hidden) setInfoOpen(false);
+  }
+  legendPanel.hidden = !open;
+  legendButton.setAttribute("aria-expanded", String(open));
+  if (open) {
+    legendClose.focus({ preventScroll: true });
+  } else if (restoreFocus) {
+    legendButton.focus({ preventScroll: true });
+  }
+}
+
 infoButton.addEventListener("click", () => {
   setInfoOpen(infoPanel.hidden === true);
 });
 infoClose.addEventListener("click", () => {
   setInfoOpen(false, true);
+});
+legendButton.addEventListener("click", () => {
+  setLegendOpen(legendPanel.hidden === true);
+});
+legendClose.addEventListener("click", () => {
+  setLegendOpen(false, true);
 });
 featureCardClose.addEventListener("click", () => {
   hideFeatureCard(true);
@@ -545,16 +571,26 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!featureCard.hidden) {
     hideFeatureCard(true);
+  } else if (!legendPanel.hidden) {
+    setLegendOpen(false, true);
   } else if (!infoPanel.hidden) {
     setInfoOpen(false, true);
   }
 });
 document.addEventListener("pointerdown", (event) => {
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (
+    !legendPanel.hidden &&
+    !legendPanel.contains(target) &&
+    !legendButton.contains(target)
+  ) {
+    setLegendOpen(false);
+  }
   if (
     !infoPanel.hidden &&
-    event.target instanceof Node &&
-    !infoPanel.contains(event.target) &&
-    !infoButton.contains(event.target)
+    !infoPanel.contains(target) &&
+    !infoButton.contains(target)
   ) {
     setInfoOpen(false);
   }

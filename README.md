@@ -36,7 +36,7 @@ world.pmtiles (south-up geometry, native z0–z6)
 MapLibre GL JS + pmtiles protocol, static on GitHub Pages
 ```
 
-The generated archive is about **4.7 MB** and is not committed. Until it is
+The generated archive is about **5.3 MB** and is not committed. Until it is
 built and published, the viewer shows a clear “Map data not built yet” panel.
 
 ## Map experience
@@ -49,10 +49,11 @@ built and published, the viewer shows a clear “Map data not built yet” panel
 - `+` / `−` controls (top right).
 - Native **z0–z6** data, overzoom to z14. No duplicated geometry is stored for
   overzoom.
-- Progressive detail: land and lakes at world scale, country boundaries,
-  rivers, capitals, cities and towns as you zoom in. At z5–z6 the map also
-  adds urban areas, parks, airports, ports, selected Admin 1 boundaries,
-  a denser road and railway network, and ranked Admin 1 labels at z6.
+- Progressive detail: land, ice sheets, lakes, ocean/sea labels and physical
+  region labels at world scale, country boundaries, rivers, capitals, cities
+  and towns as you zoom in. At z5–z6 the map also adds urban areas, parks,
+  airports, ports, named mountain peaks, selected Admin 1 boundaries, a denser
+  road and railway network, and ranked Admin 1 labels at z6.
 - Style in [`public/style.json`](public/style.json): warm land, blue water,
   muted country borders and a compact place-label hierarchy.
 - Self-hosted Noto Sans glyphs; no runtime CDN dependency.
@@ -61,12 +62,16 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   the browser.
 - An information control explains the orientation, the data source and the
   coordinate contract.
+- A legend control beside the information button explains the ice, ocean and
+  sea, physical region, and peak layers.
 - A share control in the top-right controls sends the current view with the
   native share sheet where available and copies the URL to the clipboard
   otherwise. The share text names a nearby rendered city, town, region or
   country, and both paths use the same real-coordinate hash as the address bar.
-- Click a place, airport, port or park for a compact card with its category,
-  population or IATA code where available, and real-world coordinates.
+- Click a place, airport, port, park, ocean/sea, desert, mountain range, plain
+  or mountain peak for a compact card with its category, population, IATA code,
+  elevation or physical-region type where available, and real-world
+  coordinates.
 
 Rotation and pitch are deliberately disabled so the plan view stays
 unambiguous. The map still behaves like a conventional pan/zoom viewer in every
@@ -194,8 +199,9 @@ The builder is deliberately database-free:
 - Latitude is negated while projecting, so the tile grid itself is south-up.
 - Geometry is clipped to the display world, which keeps polar rings valid.
 - Multi-geometries are split into small indexed parts before per-tile clipping.
-- MVT layers: `land`, `water`, `urban`, `park`, `boundary`, `waterway`,
-  `place`, `road`, `railway`, `airport`, `port`.
+- MVT layers: `land`, `glacier`, `water`, `urban`, `park`, `boundary`,
+  `waterway`, `place`, `road`, `railway`, `airport`, `port`, `marine`, `physio`,
+  `peak`.
 - Admin 1 label anchors use Natural Earth's `min_label`/`labelrank` hints, so
   the z6 set stays bounded instead of showing every subdivision.
 - PMTiles metadata records `south_up=true`, the transform and the source commit.
@@ -239,9 +245,12 @@ back, and exercises keyboard selection of both a place result and a coordinate
 result. It also checks that the share control passes the current URL to the
 native share sheet and, when sharing is unavailable, copies it to the
 clipboard, and that the share text names the nearby place. Click-to-inspect
-cards are opened for a place, airport, park and port, and the card's real-world
-coordinates are checked in both orientations. And it checks that the share URL
-keeps real geographic coordinates through orientation and search changes. It
+cards are opened for a place, airport, park, port, ocean/sea label, physical
+region and mountain peak, and the card's real-world coordinates are checked in
+both orientations. The legend contents are checked, and the world view is also
+checked for rendered ice sheets and ocean labels. And it
+checks that the share URL keeps real geographic coordinates through orientation
+and search changes. It
 needs `world.pmtiles` in `dist/` and a local Chrome or Chromium (override the
 binary with `CHROME_PATH`). Set
 `SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
@@ -331,7 +340,8 @@ map-build/
 - Application code: MIT (see [`LICENSE`](LICENSE)).
 - Map data: Natural Earth, public domain.
   <https://www.naturalearthdata.com/>
-- Urban areas, airports, ports and parks: Natural Earth, public domain.
+- Urban areas, airports, ports, parks, glaciers, marine labels, physical
+  regions and mountain peaks: Natural Earth, public domain.
 - Place index: Natural Earth 1:10m populated places, public domain.
 - Map glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
   [`public/fonts/`](public/fonts/).
@@ -354,4 +364,6 @@ keeps a source credit visible in the map and in the information panel.
   Service dataset, so parks are only shown in the United States.
 - Native detail stops at z6; z14 is overzoom.
 - The archive is a snapshot of Natural Earth, not live data.
+- Ocean/sea labels, glaciers and mountain peaks come from Natural Earth's
+  selected 1:10m physical layers, not an exhaustive gazetteer.
 - Place labels are point labels; dense areas can still overlap at low zoom.

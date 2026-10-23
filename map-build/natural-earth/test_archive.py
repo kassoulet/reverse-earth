@@ -9,6 +9,7 @@ from pmtiles.reader import MmapSource, Reader
 ARCHIVE = Path(__file__).resolve().parents[2] / "public/data/world.pmtiles"
 EXPECTED_LAYERS = {
     "land",
+    "glacier",
     "water",
     "urban",
     "park",
@@ -19,6 +20,9 @@ EXPECTED_LAYERS = {
     "railway",
     "airport",
     "port",
+    "marine",
+    "physio",
+    "peak",
 }
 
 
@@ -91,6 +95,43 @@ class ArchiveTests(unittest.TestCase):
         }
         self.assertIn("Paris", names)
         self.assertGreater(len(decoded.get("land", {}).get("features", [])), 0)
+
+    def test_glaciers_marine_labels_and_peaks_are_present(self):
+        world = self.reader.get(0, 0, 0)
+        self.assertIsNotNone(world)
+        decoded_world = mapbox_vector_tile.decode(gzip.decompress(world))
+
+        glacier_classes = {
+            feature["properties"].get("class")
+            for feature in decoded_world.get("glacier", {}).get("features", [])
+        }
+        self.assertIn("glacier", glacier_classes)
+
+        marine_names = {
+            feature["properties"].get("name")
+            for feature in decoded_world.get("marine", {}).get("features", [])
+        }
+        self.assertIn("North Atlantic Ocean", marine_names)
+
+        x, y = tile_for(13.0, 23.0, 2)
+        sahara = mapbox_vector_tile.decode(
+            gzip.decompress(self.reader.get(2, x, y))
+        )
+        region_names = {
+            feature["properties"].get("name")
+            for feature in sahara.get("physio", {}).get("features", [])
+        }
+        self.assertIn("Sahara", region_names)
+
+        x, y = tile_for(86.925, 27.988, 6)
+        everest = mapbox_vector_tile.decode(
+            gzip.decompress(self.reader.get(6, x, y))
+        )
+        peak_names = {
+            feature["properties"].get("name")
+            for feature in everest.get("peak", {}).get("features", [])
+        }
+        self.assertIn("Mount Everest", peak_names)
 
     def test_optional_admin1_roads_and_railways_are_present_at_z6(self):
         x, y = tile_for(8.6821, 50.1109, 6)

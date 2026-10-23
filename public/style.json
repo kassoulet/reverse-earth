@@ -34,6 +34,17 @@
       }
     },
     {
+      "id": "glacier",
+      "type": "fill",
+      "source": "world",
+      "source-layer": "glacier",
+      "paint": {
+        "fill-color": "#eef5f4",
+        "fill-outline-color": "#d5e4e4",
+        "fill-opacity": 0.95
+      }
+    },
+    {
       "id": "urban",
       "type": "fill",
       "source": "world",
@@ -305,6 +316,69 @@
       }
     },
     {
+      "id": "marine-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "marine",
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Italic"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          10,
+          2,
+          11,
+          4,
+          12,
+          6,
+          13
+        ],
+        "text-transform": "uppercase",
+        "text-letter-spacing": 0.1,
+        "text-max-width": 8,
+        "text-padding": 3
+      },
+      "paint": {
+        "text-color": "#587c92",
+        "text-halo-color": "rgba(241, 249, 252, 0.82)",
+        "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "physio-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "physio",
+      "minzoom": 1,
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Italic"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          1,
+          9,
+          4,
+          10.5,
+          6,
+          12
+        ],
+        "text-transform": "uppercase",
+        "text-letter-spacing": 0.08,
+        "text-max-width": 8,
+        "text-padding": 3
+      },
+      "paint": {
+        "text-color": "#8a735c",
+        "text-halo-color": "rgba(242, 238, 229, 0.9)",
+        "text-halo-width": 1.2
+      }
+    },
+    {
       "id": "airport-dot",
       "type": "circle",
       "source": "world",
@@ -410,6 +484,59 @@
       },
       "paint": {
         "text-color": "#3f667a",
+        "text-halo-color": "rgba(255, 253, 249, 0.9)",
+        "text-halo-width": 1.1
+      }
+    },
+    {
+      "id": "peak-dot",
+      "type": "circle",
+      "source": "world",
+      "source-layer": "peak",
+      "minzoom": 5,
+      "paint": {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          1.5,
+          10,
+          2.6,
+          14,
+          3.4
+        ],
+        "circle-color": "#6b5a45",
+        "circle-stroke-color": "#fffaf4",
+        "circle-stroke-width": 0.8
+      }
+    },
+    {
+      "id": "peak-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "peak",
+      "minzoom": 5,
+      "filter": ["!=", ["get", "name"], ""],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Italic"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          8.5,
+          10,
+          10.5
+        ],
+        "text-anchor": "top",
+        "text-offset": [0, 0.6],
+        "text-max-width": 8,
+        "text-padding": 2
+      },
+      "paint": {
+        "text-color": "#5f5143",
         "text-halo-color": "rgba(255, 253, 249, 0.9)",
         "text-halo-width": 1.1
       }

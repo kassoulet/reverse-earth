@@ -12,9 +12,20 @@ export const INSPECT_LAYER_IDS: string[] = [
   "port-dot",
   "port-label",
   "park",
+  "marine-label",
+  "physio-label",
+  "peak-dot",
+  "peak-label",
 ];
 
-export type FeatureCategory = "place" | "airport" | "port" | "park";
+export type FeatureCategory =
+  | "place"
+  | "airport"
+  | "port"
+  | "park"
+  | "marine"
+  | "physio"
+  | "peak";
 
 export interface FeatureCardFact {
   label: string;
@@ -38,6 +49,9 @@ const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   airport: "Airport",
   port: "Port",
   park: "Park",
+  marine: "Water body",
+  physio: "Physical region",
+  peak: "Elevation",
 };
 
 const PLACE_KIND_LABELS: Record<string, string> = {
@@ -48,18 +62,55 @@ const PLACE_KIND_LABELS: Record<string, string> = {
   country: "Country",
 };
 
+const MARINE_CLASS_LABELS: Record<string, string> = {
+  ocean: "Ocean",
+  sea: "Sea",
+  gulf: "Gulf",
+  bay: "Bay",
+  strait: "Strait",
+  sound: "Sound",
+  channel: "Channel",
+  lagoon: "Lagoon",
+  fjord: "Fjord",
+  inlet: "Inlet",
+  reef: "Reef",
+  river: "River mouth",
+  generic: "Water body",
+};
+
+const PHYSIO_CLASS_LABELS: Record<string, string> = {
+  desert: "Desert",
+  range: "Mountain range",
+  plain: "Plain",
+};
+
+const PEAK_CLASS_LABELS: Record<string, string> = {
+  mountain: "Mountain",
+  depression: "Depression",
+  pass: "Mountain pass",
+  plateau: "Plateau",
+  "spot elevation": "Spot elevation",
+  cape: "Cape",
+};
+
 const FALLBACK_TITLES: Record<FeatureCategory, string> = {
   place: "Unnamed place",
   airport: "Unnamed airport",
   port: "Unnamed port",
   park: "Unnamed park",
+  marine: "Unnamed water body",
+  physio: "Unnamed physical region",
+  peak: "Unnamed elevation",
 };
 
 export function categoryForLayer(layerId: string): FeatureCategory | null {
   if (layerId.startsWith("place-")) return "place";
   if (layerId.startsWith("airport-")) return "airport";
   if (layerId.startsWith("port-")) return "port";
+  if (layerId.startsWith("peak-")) return "peak";
   if (layerId === "park") return "park";
+  if (layerId === "marine-label") return "marine";
+  if (layerId === "physio-label") return "physio";
   return null;
 }
 
@@ -96,6 +147,12 @@ export function formatCoordinates(
 function formatPopulation(value: number): string | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   return new Intl.NumberFormat("en-US").format(Math.round(value));
+}
+
+function formatElevation(value: number): string | null {
+  if (!Number.isFinite(value) || value === 0) return null;
+  const meters = new Intl.NumberFormat("en-US").format(Math.abs(value));
+  return value < 0 ? `${meters} m below sea level` : `${meters} m`;
 }
 
 function airportTypeLabel(value: string): string {
@@ -159,6 +216,27 @@ export function buildFeatureCard(
     case "park":
       subtitle = textProperty(properties, "type") || "Protected area";
       break;
+    case "marine": {
+      const kind = textProperty(properties, "class");
+      subtitle = MARINE_CLASS_LABELS[kind] ?? "Water body";
+      break;
+    }
+    case "physio": {
+      const kind = textProperty(properties, "class");
+      subtitle = PHYSIO_CLASS_LABELS[kind] ?? "Physical region";
+      break;
+    }
+    case "peak": {
+      const kind = textProperty(properties, "class");
+      subtitle = PEAK_CLASS_LABELS[kind] ?? "Elevation";
+      const elevation = formatElevation(
+        numberProperty(properties, "elevation"),
+      );
+      if (elevation) facts.push({ label: "Elevation", value: elevation });
+      const country = textProperty(properties, "country");
+      if (country) facts.push({ label: "Country", value: country });
+      break;
+    }
   }
 
   const coordinates = formatCoordinates(

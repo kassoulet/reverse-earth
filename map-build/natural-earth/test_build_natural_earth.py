@@ -179,6 +179,100 @@ class OptionalDetailTests(unittest.TestCase):
             [4, 6, 7],
         )
 
+    def test_new_physical_layers_are_filtered_by_zoom(self):
+        glacier = build.PreparedSource(
+            layer="glacier",
+            scale="10m",
+            features=[
+                build.Feature(
+                    geometry=Point(0, 0),
+                    properties={"class": "glacier"},
+                    rank=rank,
+                    min_zoom=min_zoom,
+                )
+                for rank, min_zoom in ((0, 0), (1, 2), (5, 5))
+            ],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(glacier, 0)],
+            [0],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(glacier, 5)],
+            [0, 1, 5],
+        )
+
+        marine = build.PreparedSource(
+            layer="marine",
+            scale="10m",
+            features=[
+                build.Feature(
+                    geometry=Point(0, 0),
+                    properties={"class": "ocean"},
+                    rank=rank,
+                    min_zoom=min_zoom,
+                )
+                for rank, min_zoom in ((0, 0), (1, 1), (5, 4))
+            ],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(marine, 0)],
+            [0],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(marine, 4)],
+            [0, 1],
+        )
+
+        physio = build.PreparedSource(
+            layer="physio",
+            scale="10m",
+            features=[
+                build.Feature(
+                    geometry=Point(0, 0),
+                    properties={"class": "desert"},
+                    rank=rank,
+                    min_zoom=min_zoom,
+                )
+                for rank, min_zoom in ((1, 1), (2, 2), (5, 5))
+            ],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(physio, 1)],
+            [1],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(physio, 5)],
+            [1, 2, 5],
+        )
+
+        peak = build.PreparedSource(
+            layer="peak",
+            scale="10m",
+            features=[
+                build.Feature(
+                    geometry=Point(0, 0),
+                    properties={"class": "mountain"},
+                    rank=rank,
+                    min_zoom=min_zoom,
+                )
+                for rank, min_zoom in ((1, 5), (2, 5), (3, 6))
+            ],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(peak, 5)],
+            [1, 2],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(peak, 6)],
+            [1, 2, 3],
+        )
+
+    def test_marine_display_names_normalise_all_caps(self):
+        self.assertEqual(build.display_name("SOUTHERN OCEAN"), "Southern Ocean")
+        self.assertEqual(build.display_name("GULF OF MEXICO"), "Gulf of Mexico")
+        self.assertEqual(build.display_name("Bay of Bengal"), "Bay of Bengal")
+
     def test_rank_filters_for_urban_airports_and_ports(self):
         urban = build.PreparedSource(
             layer="urban",

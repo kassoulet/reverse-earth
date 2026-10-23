@@ -45,6 +45,11 @@ const LAYER_IDS = [
   "railway",
   "urban",
   "park",
+  "glacier",
+  "marine-label",
+  "physio-label",
+  "peak-dot",
+  "peak-label",
   "airport-dot",
   "airport-label",
   "port-dot",
@@ -404,6 +409,39 @@ async function run() {
     ) {
       fail(`Unexpected initial URL state: ${JSON.stringify(initialUrl)}`);
     }
+
+    await cdp.evaluate('document.querySelector("#legend-button")?.click()');
+    const legend = await cdp.waitFor(
+      `(() => {
+        const panel = document.querySelector("#legend-panel");
+        const button = document.querySelector("#legend-button");
+        if (!panel || panel.hidden) return null;
+        return {
+          expanded: button?.getAttribute("aria-expanded"),
+          focused: document.activeElement?.id ?? null,
+          entries: [...panel.querySelectorAll(".legend strong")].map(
+            (entry) => entry.textContent ?? "",
+          ),
+        };
+      })()`,
+      "legend panel",
+      3_000,
+    );
+    if (
+      legend.expanded !== "true" ||
+      legend.focused !== "legend-close" ||
+      !["Glacier", "Ocean & sea", "Physical region", "Peak"].every((entry) =>
+        legend.entries.includes(entry),
+      )
+    ) {
+      fail(`Unexpected legend contents: ${JSON.stringify(legend)}`);
+    }
+    await cdp.evaluate('document.querySelector("#legend-close")?.click()');
+    await cdp.waitFor(
+      'document.querySelector("#legend-panel")?.hidden === true && document.querySelector("#legend-button")?.getAttribute("aria-expanded") === "false"',
+      "legend closed",
+      3_000,
+    );
 
     await cdp.evaluate(`(() => {
       window.__sharedData = null;
@@ -849,6 +887,10 @@ async function run() {
             "port-dot",
             "port-label",
             "park",
+            "marine-label",
+            "physio-label",
+            "peak-dot",
+            "peak-label",
           ];
           const features = map.queryRenderedFeatures({ layers: allLayers });
           for (const feature of features) {
@@ -1038,13 +1080,57 @@ async function run() {
       2_000,
     );
 
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [86.925, 27.988], zoom: 6 });
+      return true;
+    })()`);
+    const peakCard = await inspectFeature(["peak-dot", "peak-label"], "Elevation");
+    const elevation = peakCard.facts.find((fact) => fact.label === "Elevation")?.value;
+    if (!elevation?.includes(" m")) {
+      fail(`Peak card has no elevation: ${JSON.stringify(peakCard)}`);
+    }
+    await closeFeatureCard();
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [-30, 40], zoom: 2 });
+      return true;
+    })()`);
+    const marineCard = await inspectFeature(["marine-label"], "Water body");
+    await closeFeatureCard();
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [13, 23], zoom: 3 });
+      return true;
+    })()`);
+    const physioCard = await inspectFeature(["physio-label"], "Physical region");
+    await closeFeatureCard();
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [0, 0], zoom: 0 });
+      return true;
+    })()`);
+    const globalDetail = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        const glacier = map.queryRenderedFeatures({ layers: ["glacier"] }).length;
+        const marine = map.queryRenderedFeatures({ layers: ["marine-label"] }).length;
+        if (glacier === 0 || marine === 0) return null;
+        return { glacier, marine };
+      })()`,
+      "glacier and marine labels at world scale",
+      20_000,
+    );
+
     const failures = cdp.failures.filter((failure) => !failure.includes("ERR_ABORTED"));
     const pmtilesResponses = cdp.responses.filter((response) =>
       response.url.includes("world.pmtiles"),
     );
     const summary = {
       splash,
+      legend,
       detailLayers: report.rendered,
+      globalDetail,
       northUp: {
         orientation: northUp.orientation,
         roads: northUp.roads,
@@ -1078,6 +1164,9 @@ async function run() {
         port: portCard,
         park: parkCard,
         northPort: northPortCard,
+        peak: peakCard,
+        marine: marineCard,
+        physio: physioCard,
       },
 
       pmtilesRequests: pmtilesResponses.length,

@@ -13,6 +13,10 @@ describe("categoryForLayer", () => {
     expect(categoryForLayer("airport-label")).toBe("airport");
     expect(categoryForLayer("port-dot")).toBe("port");
     expect(categoryForLayer("park")).toBe("park");
+    expect(categoryForLayer("marine-label")).toBe("marine");
+    expect(categoryForLayer("physio-label")).toBe("physio");
+    expect(categoryForLayer("peak-dot")).toBe("peak");
+    expect(categoryForLayer("peak-label")).toBe("peak");
     expect(categoryForLayer("road-major")).toBeNull();
   });
 });
@@ -109,6 +113,78 @@ describe("buildFeatureCard", () => {
     );
     expect(park?.eyebrow).toBe("Park");
     expect(park?.subtitle).toBe("National Park");
+  });
+
+  it("formats a water body with its Natural Earth class", () => {
+    const card = buildFeatureCard(
+      "marine-label",
+      { name: "North Atlantic Ocean", class: "ocean" },
+      { longitude: -30, latitude: 40 },
+    );
+
+    expect(card).toEqual({
+      eyebrow: "Water body",
+      title: "North Atlantic Ocean",
+      subtitle: "Ocean",
+      facts: [
+        { label: "Coordinates", value: "40.00° N, 30.00° W" },
+      ],
+    });
+  });
+
+  it("formats a desert, range or plain", () => {
+    const card = buildFeatureCard(
+      "physio-label",
+      { name: "Sahara", class: "desert" },
+      { longitude: 13, latitude: 23 },
+    );
+
+    expect(card).toEqual({
+      eyebrow: "Physical region",
+      title: "Sahara",
+      subtitle: "Desert",
+      facts: [
+        { label: "Coordinates", value: "23.00° N, 13.00° E" },
+      ],
+    });
+  });
+
+  it("formats a peak with its elevation and country", () => {
+    const card = buildFeatureCard(
+      "peak-label",
+      {
+        name: "Mont Blanc",
+        class: "mountain",
+        elevation: 4807,
+        country: "France",
+      },
+      { longitude: 6.865, latitude: 45.8326 },
+    );
+
+    expect(card).toEqual({
+      eyebrow: "Elevation",
+      title: "Mont Blanc",
+      subtitle: "Mountain",
+      facts: [
+        { label: "Elevation", value: "4,807 m" },
+        { label: "Country", value: "France" },
+        { label: "Coordinates", value: "45.83° N, 6.87° E" },
+      ],
+    });
+  });
+
+  it("describes depressions below sea level", () => {
+    const card = buildFeatureCard(
+      "peak-dot",
+      { name: "Death Valley", class: "depression", elevation: -86 },
+      { longitude: -116.8, latitude: 36.2 },
+    );
+
+    expect(card?.subtitle).toBe("Depression");
+    expect(card?.facts[0]).toEqual({
+      label: "Elevation",
+      value: "86 m below sea level",
+    });
   });
 
   it("falls back when a feature has no name and omits invalid coordinates", () => {
