@@ -897,6 +897,8 @@ async function run() {
           layers: ["road-major", "road-secondary"],
         }).length;
         const admin1 = map.queryRenderedFeatures({ layers: ["boundary-admin1"] }).length;
+        const readout = document.querySelector("#map-readout");
+        if (!readout || readout.hidden) return null;
         if (roads === 0 || admin1 === 0) return null;
         const selectors = [
           "#search-input",
@@ -942,6 +944,7 @@ async function run() {
         return {
           viewport: { width: innerWidth, height: innerHeight },
           controlsInsideViewport,
+          controls,
           horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
           canvas: canvas
             ? {
@@ -960,7 +963,9 @@ async function run() {
       "mobile viewport",
       20_000,
     );
-    if (!mobile.controlsInsideViewport) fail("A map control is outside the mobile viewport.");
+    if (!mobile.controlsInsideViewport) {
+      fail(`A map control is outside the mobile viewport: ${JSON.stringify(mobile.controls)}`);
+    }
     if (mobile.horizontalOverflow) fail("The mobile viewport has horizontal overflow.");
     if (!mobile.canvas || mobile.canvas.width < 380 || mobile.canvas.height < 830) {
       fail(`The mobile map canvas does not fill the viewport: ${JSON.stringify(mobile.canvas)}`);
