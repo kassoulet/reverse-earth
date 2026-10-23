@@ -10,11 +10,15 @@ Layer schema (shared with any future filtered OSM source):
 
     land       polygons
     water      polygons (lakes)
+    urban      polygons (Natural Earth urban areas at z5-z6)
+    park       polygons (Natural Earth parks and protected areas at z5-z6)
     boundary   lines (international and z5-z6 Admin 1 boundaries)
     waterway   lines (rivers and lake centerlines)
+    road       lines (major/secondary roads at z5-z6, local roads at z6)
+    railway    lines (selected railways at z5-z6)
+    airport    points (major airports at z5-z6)
+    port       points (major ports at z5-z6)
     place      points (countries, capitals, cities, towns, selected Admin 1 regions)
-    road       lines (selected major/secondary roads at z5-z6)
-    railway    lines (selected major railways at z5-z6)
 
 The tile grid is a normal XYZ grid in display space. South-up comes from
 negating latitude while projecting, so the top of every tile at y=0 is the
@@ -128,6 +132,22 @@ SOURCES: dict[str, tuple[str, str]] = {
         "2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9",
         f"{NE_BASE}/ne_10m_lakes.geojson",
     ),
+    "ne_10m_urban_areas.geojson": (
+        "5136ffd816a9b28c0f295e6797b4c03eaa421be80d78b90f542db4a932dd4497",
+        f"{NE_BASE}/ne_10m_urban_areas.geojson",
+    ),
+    "ne_10m_airports.geojson": (
+        "28892a892f670f1cf654c62253c6169fdc2504b92c956addb4ac8224f50cebe0",
+        f"{NE_BASE}/ne_10m_airports.geojson",
+    ),
+    "ne_10m_ports.geojson": (
+        "c5a5028f5187a5e1b9fe7f0fab99804a8be7482099a2365d404fb7e9dd6b5457",
+        f"{NE_BASE}/ne_10m_ports.geojson",
+    ),
+    "ne_10m_parks_and_protected_lands_area.geojson": (
+        "78163a10b3a7f5698e24e4421b7da1955ed7d1dafa986f053473c0b5ec8fe055",
+        f"{NE_BASE}/ne_10m_parks_and_protected_lands_area.geojson",
+    ),
     "ne_110m_admin_0_countries.geojson": (
         "6866c877d39cba9c357620878839b336d569f8c662d3cfab4cb1dbe2d39c977f",
         f"{NE_BASE}/ne_110m_admin_0_countries.geojson",
@@ -170,16 +190,33 @@ COUNTRY_LABEL_RANK_BY_ZOOM = {0: 2, 1: 2, 2: 3, 3: 3, 4: 4, 5: 4, 6: 5}
 # sparse enough for a z5-z6 basemap; the whole 10m dataset is never emitted.
 ADMIN1_MIN_ZOOM = 5
 ADMIN1_LABEL_MIN_ZOOM = 6
-ADMIN1_LABEL_MAX_MIN_LABEL = 8
-ADMIN1_LABEL_MAX_RANK = 4
+ADMIN1_LABEL_MAX_MIN_LABEL = 9
+ADMIN1_LABEL_MAX_RANK = 5
 ROAD_MIN_ZOOM = 5
 ROAD_CLASSES_BY_ZOOM = {
-    5: frozenset({"major"}),
-    6: frozenset({"major", "secondary"}),
+    5: frozenset({"major", "secondary"}),
+    6: frozenset({"major", "secondary", "minor"}),
 }
-RAILWAY_RANK_BY_ZOOM = {5: 4, 6: 6}
+RAILWAY_RANK_BY_ZOOM = {5: 5, 6: 7}
 
-LAYER_ORDER = ("land", "water", "boundary", "waterway", "place", "road", "railway")
+URBAN_RANK_BY_ZOOM = {5: 5, 6: 7}
+PARK_MIN_ZOOM = 5
+AIRPORT_RANK_BY_ZOOM = {5: 4, 6: 6}
+PORT_RANK_BY_ZOOM = {5: 4, 6: 5}
+
+LAYER_ORDER = (
+    "land",
+    "water",
+    "urban",
+    "park",
+    "boundary",
+    "waterway",
+    "road",
+    "railway",
+    "airport",
+    "port",
+    "place",
+)
 
 
 @dataclass
@@ -361,6 +398,50 @@ def load_layer(
 
 def build_feature(prepared: PreparedSource, geometry: BaseGeometry, props: dict[str, Any]) -> Feature:
     layer = prepared.layer
+    if layer == "urban":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={"class": "urban", "rank": rank},
+            rank=rank,
+            min_zoom=number_value(props.get("min_zoom"), 99),
+        )
+    if layer == "park":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={
+                "name": string_value(props.get("name")),
+                "type": string_value(props.get("unit_type")) or string_value(props.get("featurecla")),
+                "rank": rank,
+            },
+            rank=rank,
+            min_zoom=PARK_MIN_ZOOM,
+        )
+    if layer == "airport":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={
+                "name": string_value(props.get("name")),
+                "type": string_value(props.get("type")),
+                "iata": string_value(props.get("iata_code")),
+                "rank": rank,
+            },
+            rank=rank,
+            min_zoom=number_value(props.get("min_zoom"), 99),
+        )
+    if layer == "port":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={
+                "name": string_value(props.get("name")),
+                "rank": rank,
+            },
+            rank=rank,
+            min_zoom=number_value(props.get("min_zoom"), 99),
+        )
     if layer == "place":
         return build_place(geometry, props)
     if layer == "water":
@@ -442,7 +523,9 @@ def road_class(road_type: str) -> str:
         return "major"
     if road_type == "Secondary Highway":
         return "secondary"
-    return "minor"
+    if road_type in ("Road", "Bypass"):
+        return "minor"
+    return "other"
 
 
 def property_value(props: dict[str, Any], *names: str) -> Any:
@@ -591,8 +674,8 @@ def place_visible(feature: Feature, zoom: int) -> bool:
     if zoom == 4:
         return min_zoom <= 4 or (capital and population >= 500_000) or population >= 1_500_000
     if zoom == 5:
-        return min_zoom <= 5 or capital or population >= 500_000
-    return min_zoom <= zoom or capital or population >= 100_000
+        return min_zoom <= 5 or capital or population >= 300_000
+    return min_zoom <= zoom or capital or population >= 50_000
 
 
 def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
@@ -608,6 +691,17 @@ def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
         return [feature for feature in source.features if feature.rank <= limit or feature.min_zoom <= zoom]
     if source.layer == "place":
         return [feature for feature in source.features if place_visible(feature, zoom)]
+    if source.layer == "urban":
+        limit = URBAN_RANK_BY_ZOOM.get(zoom, -1)
+        return [feature for feature in source.features if feature.rank <= limit]
+    if source.layer == "park":
+        return source.features if zoom >= PARK_MIN_ZOOM else []
+    if source.layer == "airport":
+        limit = AIRPORT_RANK_BY_ZOOM.get(zoom, -1)
+        return [feature for feature in source.features if feature.rank <= limit]
+    if source.layer == "port":
+        limit = PORT_RANK_BY_ZOOM.get(zoom, -1)
+        return [feature for feature in source.features if feature.rank <= limit]
     if source.layer == "road":
         allowed = ROAD_CLASSES_BY_ZOOM.get(zoom, frozenset())
         return [
@@ -661,6 +755,13 @@ def prepare_zoom_sources(
         features = filtered_features(loaded[(layer, "10m")], zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
 
+    for layer in ("urban", "park", "airport", "port"):
+        if zoom < ROAD_MIN_ZOOM:
+            result[layer] = ([], None)
+            continue
+        features = filtered_features(loaded[(layer, "10m")], zoom)
+        result[layer] = (features, STRtree([feature.geometry for feature in features]))
+
     places: list[Feature] = []
     place_source = loaded[("place", scale)]
     places.extend(filtered_features(place_source, zoom))
@@ -676,7 +777,7 @@ def prepare_zoom_sources(
 
 
 def extract_geometry(geometry: BaseGeometry, layer: str) -> BaseGeometry | None:
-    if layer in ("land", "water"):
+    if layer in ("land", "water", "urban", "park"):
         allowed = ("Polygon", "MultiPolygon")
     elif layer in ("boundary", "waterway", "road", "railway"):
         allowed = ("LineString", "MultiLineString")
@@ -731,7 +832,7 @@ def encode_tile(
         for index in tree.query(clip_box):
             feature = features[int(index)]
             geometry = feature.geometry
-            if layer == "place":
+            if layer in ("place", "airport", "port"):
                 if not clip_box.covers(geometry):
                     continue
                 clipped = geometry
@@ -748,7 +849,7 @@ def encode_tile(
                     clipped,
                     [scale, 0, 0, scale, -west * scale, -north * scale],
                 )
-                if layer in ("land", "water"):
+                if layer in ("land", "water", "urban", "park"):
                     tile_geometry = tile_geometry.simplify(2.0, preserve_topology=True)
                 elif layer in ("boundary", "waterway", "road", "railway"):
                     tile_geometry = tile_geometry.simplify(1.0, preserve_topology=False)
@@ -833,6 +934,18 @@ def build(
     )
     loaded[("railway", "10m")] = load_layer(
         cache_dir, "railway", "ne_10m_railroads", "10m"
+    )
+    loaded[("urban", "10m")] = load_layer(
+        cache_dir, "urban", "ne_10m_urban_areas", "10m"
+    )
+    loaded[("park", "10m")] = load_layer(
+        cache_dir, "park", "ne_10m_parks_and_protected_lands_area", "10m"
+    )
+    loaded[("airport", "10m")] = load_layer(
+        cache_dir, "airport", "ne_10m_airports", "10m"
+    )
+    loaded[("port", "10m")] = load_layer(
+        cache_dir, "port", "ne_10m_ports", "10m"
     )
     loaded[("country-labels", "110m")] = PreparedSource(
         layer="country-labels", scale="110m", features=country_labels(cache_dir)
@@ -921,6 +1034,15 @@ def build_metadata(minzoom: int, maxzoom: int, counts: dict[str, int]) -> dict[s
     fields = {
         "land": {"class": "String"},
         "water": {"name": "String", "class": "String", "rank": "Number"},
+        "urban": {"class": "String", "rank": "Number"},
+        "park": {"name": "String", "type": "String", "rank": "Number"},
+        "airport": {
+            "name": "String",
+            "type": "String",
+            "iata": "String",
+            "rank": "Number",
+        },
+        "port": {"name": "String", "rank": "Number"},
         "boundary": {
             "name": "String",
             "kind": "String",

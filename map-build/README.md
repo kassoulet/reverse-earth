@@ -68,18 +68,19 @@ What it does:
    delete the cached file and retry.
 3. Loads land, lakes, country boundaries, rivers/lake centerlines and populated
    places at 110m, 50m and 10m, plus 10m Admin 1 boundaries, Admin 1 label
-   anchors, roads and railways.
+   anchors, roads, railways, urban areas, airports, ports and parks.
 4. Projects longitude/latitude into the display world with
    `display_latitude = -latitude`, then clips to the Web Mercator display bounds.
 5. Splits multi-geometries into indexed parts, simplifies, and clips each part
    per tile.
-6. Writes MVT layers `land`, `water`, `boundary`, `waterway`, `place`, `road`
-   and `railway` into a single PMTiles archive, native z0–z6.
+6. Writes MVT layers `land`, `water`, `urban`, `park`, `boundary`, `waterway`,
+   `place`, `road`, `railway`, `airport` and `port` into a single PMTiles
+   archive, native z0–z6.
 7. Records `south_up=true`, the coordinate transform and the source commit in
    the archive metadata.
 
-A full build is currently about 3.9 MB, 3,312 non-empty tiles and roughly a
-minute and a half of CPU on a laptop.
+A full build is currently about 4.7 MB, 3,312 non-empty tiles and roughly two
+minutes of CPU on a laptop.
 
 ### Zoom and detail
 
@@ -87,7 +88,7 @@ minute and a half of CPU on a laptop.
 | --- | --- | --- |
 | z0–z2 | 110m | land, major lakes, country borders, capitals, country labels |
 | z3–z4 | 50m | more lakes, rivers, boundaries, cities |
-| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, towns, selected Admin 1 boundaries, major roads and railways; selected Admin 1 labels at z6 |
+| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, towns, urban areas, parks, airports, ports, selected Admin 1 boundaries, denser roads and railways; selected Admin 1 labels at z6 |
 
 Native z0–z6 are mandatory for V1. The viewer allows overzoom to z14; overzoom
 does not duplicate data in the archive.
@@ -98,26 +99,34 @@ does not duplicate data in the archive.
 | --- | --- | --- |
 | `land` | polygons | `class` |
 | `water` | polygons | `name`, `class`, `rank` |
+| `urban` | polygons | `class`, `rank` |
+| `park` | polygons | `name`, `type`, `rank` |
 | `boundary` | lines | `name`, `kind`, `disputed`, `admin0` |
 | `waterway` | lines | `name`, `class`, `rank` |
 | `place` | points | `name`, `name_en`, `kind`, `rank`, `population`, `country`, `capital` |
 | `road` | lines | `name`, `class`, `type`, `rank` |
 | `railway` | lines | `name`, `class`, `rank` |
+| `airport` | points | `name`, `type`, `iata`, `rank` |
+| `port` | points | `name`, `rank` |
 
 Boundary `kind` is `country` or `admin1`; Admin 1 lines appear only at z5–z6
 and carry their parent country in `admin0`. Place `kind` is one of `country`,
-`capital`, `city`, `town` or `region`. Road `class` is `major` or `secondary`
-(only selected classes reach the tiles). `disputed` is a boolean. `rank` is
-Natural Earth's scalerank/labelrank; lower is more important.
+`capital`, `city`, `town` or `region`. Road `class` is `major`, `secondary` or
+`minor` (only selected classes reach the tiles). `disputed` is a boolean.
+`rank` is Natural Earth's scalerank/labelrank; lower is more important.
 
 The optional detail follows Natural Earth's own `MIN_ZOOM` hints and is
-deliberately filtered: Admin 1 lines with `MIN_ZOOM <= z`, major roads at z5
-with secondary roads added at z6, and railways with `scalerank <= 4` at z5 and
-`<= 6` at z6. Admin 1 labels appear only at z6 and only when both
-`min_label <= 8` and `labelrank <= 4`. Raising the label threshold from 6.6
-covers countries whose region labels normally start at z7–z8 (for example
-Spain, France and Japan) without opening the map to every county. There are no
-buildings, address data or POIs.
+deliberately filtered: Admin 1 lines with `MIN_ZOOM <= z`; major and secondary
+roads at z5 with local roads added at z6; railways with `scalerank <= 5` at z5
+and `<= 7` at z6; urban areas with `scalerank <= 5` at z5 and `<= 7` at z6;
+airports with `scalerank <= 4` at z5 and `<= 6` at z6; and ports with
+`scalerank <= 4` at z5 and `<= 5` at z6. Admin 1 labels appear only at z6 and
+only when both `min_label <= 9` and `labelrank <= 5`. The label thresholds
+cover countries whose region labels normally start at z7–z8 (for example
+Spain, France and Japan) without opening the map to every county. Airports and
+ports are Natural Earth's selected global points; the park layer is the US
+National Park Service dataset, so parks only appear in the United States.
+There are no buildings, address data or exhaustive POIs.
 
 ### Geometry notes
 

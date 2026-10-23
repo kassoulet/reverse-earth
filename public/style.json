@@ -2,7 +2,7 @@
   "version": 8,
   "name": "Reverse Earth — Natural Earth",
   "metadata": {
-    "description": "A warm, south-up Natural Earth basemap with a compact place-label hierarchy.",
+    "description": "A warm, south-up Natural Earth basemap with urban areas, parks, transport detail and a compact place-label hierarchy.",
     "south_up": true
   },
   "glyphs": "fonts/{fontstack}/{range}.pbf",
@@ -31,6 +31,36 @@
       "paint": {
         "fill-color": "#f2eee5",
         "fill-outline-color": "#d6d0c4"
+      }
+    },
+    {
+      "id": "urban",
+      "type": "fill",
+      "source": "world",
+      "source-layer": "urban",
+      "minzoom": 5,
+      "paint": {
+        "fill-color": "#e4dccd",
+        "fill-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          0.45,
+          6,
+          0.6
+        ]
+      }
+    },
+    {
+      "id": "park",
+      "type": "fill",
+      "source": "world",
+      "source-layer": "park",
+      "minzoom": 5,
+      "paint": {
+        "fill-color": "#dbe3cd",
+        "fill-opacity": 0.65
       }
     },
     {
@@ -71,6 +101,62 @@
       }
     },
     {
+      "id": "road-minor",
+      "type": "line",
+      "source": "world",
+      "source-layer": "road",
+      "filter": ["==", ["get", "class"], "minor"],
+      "minzoom": 6,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#eadac4",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          0.35,
+          10,
+          1.1,
+          14,
+          2.2
+        ],
+        "line-opacity": 0.55
+      }
+    },
+    {
+      "id": "road-secondary",
+      "type": "line",
+      "source": "world",
+      "source-layer": "road",
+      "filter": ["==", ["get", "class"], "secondary"],
+      "minzoom": 5,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#e7cdaa",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          0.4,
+          6,
+          0.55,
+          10,
+          1.5,
+          14,
+          3
+        ],
+        "line-opacity": 0.8
+      }
+    },
+    {
       "id": "road-major",
       "type": "line",
       "source": "world",
@@ -97,33 +183,6 @@
           4.6
         ],
         "line-opacity": 0.9
-      }
-    },
-    {
-      "id": "road-secondary",
-      "type": "line",
-      "source": "world",
-      "source-layer": "road",
-      "filter": ["==", ["get", "class"], "secondary"],
-      "minzoom": 6,
-      "layout": {
-        "line-cap": "round",
-        "line-join": "round"
-      },
-      "paint": {
-        "line-color": "#e7cdaa",
-        "line-width": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          6,
-          0.5,
-          10,
-          1.5,
-          14,
-          3
-        ],
-        "line-opacity": 0.85
       }
     },
     {
@@ -243,6 +302,116 @@
         ],
         "line-dasharray": [2, 2],
         "line-opacity": 0.7
+      }
+    },
+    {
+      "id": "airport-dot",
+      "type": "circle",
+      "source": "world",
+      "source-layer": "airport",
+      "minzoom": 5,
+      "paint": {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          1.3,
+          6,
+          2,
+          10,
+          2.8,
+          14,
+          3.6
+        ],
+        "circle-color": "#5d7886",
+        "circle-stroke-color": "#fffaf4",
+        "circle-stroke-width": 0.8
+      }
+    },
+    {
+      "id": "airport-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "airport",
+      "minzoom": 6,
+      "filter": ["<=", ["get", "rank"], 3],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Regular"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          8.5,
+          10,
+          10.5
+        ],
+        "text-anchor": "top",
+        "text-offset": [0, 0.6],
+        "text-max-width": 8,
+        "text-padding": 2
+      },
+      "paint": {
+        "text-color": "#4f5f68",
+        "text-halo-color": "rgba(255, 253, 249, 0.9)",
+        "text-halo-width": 1.1
+      }
+    },
+    {
+      "id": "port-dot",
+      "type": "circle",
+      "source": "world",
+      "source-layer": "port",
+      "minzoom": 5,
+      "paint": {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          1.2,
+          6,
+          1.8,
+          10,
+          2.4,
+          14,
+          3
+        ],
+        "circle-color": "#426f86",
+        "circle-stroke-color": "#fffaf4",
+        "circle-stroke-width": 0.6
+      }
+    },
+    {
+      "id": "port-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "port",
+      "minzoom": 6,
+      "filter": ["<=", ["get", "rank"], 5],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Regular"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          8.2,
+          10,
+          10
+        ],
+        "text-anchor": "top",
+        "text-offset": [0, 0.5],
+        "text-max-width": 8,
+        "text-padding": 2
+      },
+      "paint": {
+        "text-color": "#3f667a",
+        "text-halo-color": "rgba(255, 253, 249, 0.9)",
+        "text-halo-width": 1.1
       }
     },
     {

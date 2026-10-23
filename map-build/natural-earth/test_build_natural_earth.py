@@ -136,7 +136,7 @@ class OptionalDetailTests(unittest.TestCase):
             )
             for road_class, min_zoom in (
                 ("major", 3),
-                ("secondary", 6),
+                ("secondary", 5),
                 ("minor", 3),
             )
         ]
@@ -145,12 +145,18 @@ class OptionalDetailTests(unittest.TestCase):
         )
         self.assertEqual(
             [feature.properties["class"] for feature in build.filtered_features(source, 5)],
-            ["major"],
+            ["major", "secondary"],
         )
         self.assertEqual(
             [feature.properties["class"] for feature in build.filtered_features(source, 6)],
-            ["major", "secondary"],
+            ["major", "secondary", "minor"],
         )
+
+    def test_road_class_ignores_unknown_ways(self):
+        self.assertEqual(build.road_class("Major Highway"), "major")
+        self.assertEqual(build.road_class("Secondary Highway"), "secondary")
+        self.assertEqual(build.road_class("Road"), "minor")
+        self.assertEqual(build.road_class("Unknown"), "other")
 
     def test_railways_use_scalerank_to_control_density(self):
         features = [
@@ -170,8 +176,47 @@ class OptionalDetailTests(unittest.TestCase):
         )
         self.assertEqual(
             [feature.rank for feature in build.filtered_features(source, 6)],
+            [4, 6, 7],
+        )
+
+    def test_rank_filters_for_urban_airports_and_ports(self):
+        urban = build.PreparedSource(
+            layer="urban",
+            scale="10m",
+            features=[
+                build.Feature(geometry=Point(0, 0), properties={}, rank=rank)
+                for rank in (4, 6, 8)
+            ],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(urban, 5)],
+            [4],
+        )
+        self.assertEqual(
+            [feature.rank for feature in build.filtered_features(urban, 6)],
             [4, 6],
         )
+
+        for layer, ranks, expected_z5, expected_z6 in (
+            ("airport", (3, 5, 7), [3], [3, 5]),
+            ("port", (3, 5, 6), [3], [3, 5]),
+        ):
+            source = build.PreparedSource(
+                layer=layer,
+                scale="10m",
+                features=[
+                    build.Feature(geometry=Point(0, 0), properties={}, rank=rank)
+                    for rank in ranks
+                ],
+            )
+            self.assertEqual(
+                [feature.rank for feature in build.filtered_features(source, 5)],
+                expected_z5,
+            )
+            self.assertEqual(
+                [feature.rank for feature in build.filtered_features(source, 6)],
+                expected_z6,
+            )
 
 
 class MetadataTests(unittest.TestCase):
@@ -179,15 +224,7 @@ class MetadataTests(unittest.TestCase):
         metadata = build.build_metadata(
             0,
             6,
-            {
-                "land": 1,
-                "water": 1,
-                "boundary": 1,
-                "waterway": 1,
-                "place": 1,
-                "road": 1,
-                "railway": 1,
-            },
+            {layer: 1 for layer in build.LAYER_ORDER},
         )
         self.assertTrue(metadata["south_up"])
         self.assertIn("display_latitude = -latitude", metadata["transform"])

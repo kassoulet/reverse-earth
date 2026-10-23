@@ -36,7 +36,7 @@ world.pmtiles (south-up geometry, native z0–z6)
 MapLibre GL JS + pmtiles protocol, static on GitHub Pages
 ```
 
-The generated archive is about **3.9 MB** and is not committed. Until it is
+The generated archive is about **4.7 MB** and is not committed. Until it is
 built and published, the viewer shows a clear “Map data not built yet” panel.
 
 ## Map experience
@@ -50,8 +50,8 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   overzoom.
 - Progressive detail: land and lakes at world scale, country boundaries,
   rivers, capitals, cities and towns as you zoom in. At z5–z6 the map also
-  adds selected Admin 1 boundaries, major roads and major railways, plus
-  ranked Admin 1 labels at z6.
+  adds urban areas, parks, airports, ports, selected Admin 1 boundaries,
+  a denser road and railway network, and ranked Admin 1 labels at z6.
 - Style in [`public/style.json`](public/style.json): warm land, blue water,
   muted country borders and a compact place-label hierarchy.
 - Self-hosted Noto Sans glyphs; no runtime CDN dependency.
@@ -173,8 +173,8 @@ npm run map:build
 
 `map:build` downloads the pinned Natural Earth GeoJSON files into
 `map-build/.cache/ne`, verifies their SHA-256 checksums, builds z0–z6 and writes
-`public/data/world.pmtiles`. A full build takes roughly a minute and a half on
-a typical laptop. Use `--report` to write a JSON summary:
+`public/data/world.pmtiles`. A full build takes roughly two minutes on a
+typical laptop. Use `--report` to write a JSON summary:
 
 ```bash
 map-build/.venv/bin/python map-build/natural-earth/build_natural_earth.py \
@@ -187,8 +187,8 @@ The builder is deliberately database-free:
 - Latitude is negated while projecting, so the tile grid itself is south-up.
 - Geometry is clipped to the display world, which keeps polar rings valid.
 - Multi-geometries are split into small indexed parts before per-tile clipping.
-- MVT layers: `land`, `water`, `boundary`, `waterway`, `place`, `road`,
-  `railway`.
+- MVT layers: `land`, `water`, `urban`, `park`, `boundary`, `waterway`,
+  `place`, `road`, `railway`, `airport`, `port`.
 - Admin 1 label anchors use Natural Earth's `min_label`/`labelrank` hints, so
   the z6 set stays bounded instead of showing every subdivision.
 - PMTiles metadata records `south_up=true`, the transform and the source commit.
@@ -225,9 +225,10 @@ inversion, coordinate parsing and place ranking. The Python tests cover the
 Natural Earth projection, geometry cleanup, part splitting, tile encoding, the
 generated PMTiles archive (when present) and the optional MVT latitude-flip
 transform. The browser smoke test starts the built site in headless Chrome and
-asserts that the z6 Admin 1 boundaries, roads, railways and region labels are
-actually rendered, then switches to north-up and back, and exercises keyboard
-selection of both a place result and a coordinate result. It also checks that
+asserts that the z6 Admin 1 boundaries, urban areas, parks, airports, roads,
+railways and region labels are actually rendered, then switches to north-up and
+back, and exercises keyboard selection of both a place result and a coordinate
+result. It also checks that
 the share URL keeps real geographic coordinates through orientation and search
 changes. It needs `world.pmtiles` in `dist/` and a local Chrome or Chromium
 (override the binary with `CHROME_PATH`). Set
@@ -316,6 +317,7 @@ map-build/
 - Application code: MIT (see [`LICENSE`](LICENSE)).
 - Map data: Natural Earth, public domain.
   <https://www.naturalearthdata.com/>
+- Urban areas, airports, ports and parks: Natural Earth, public domain.
 - Place index: Natural Earth 1:10m populated places, public domain.
 - Map glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
   [`public/fonts/`](public/fonts/).
@@ -331,7 +333,11 @@ keeps a source credit visible in the map and in the information panel.
 
 - No buildings, addresses, indoor data or exhaustive POIs.
 - Roads and railways are Natural Earth's sparse 1:10m selection, shown only at
-  z5–z6; they are not an OSM-scale street network.
+  z5–z6; they are not an OSM-scale street network. Local roads appear at z6,
+  not at country scale.
+- Airports and ports are Natural Earth's selected global points, not an
+  exhaustive directory. The park layer is Natural Earth's US National Park
+  Service dataset, so parks are only shown in the United States.
 - Native detail stops at z6; z14 is overzoom.
 - The archive is a snapshot of Natural Earth, not live data.
 - Place labels are point labels; dense areas can still overlap at low zoom.

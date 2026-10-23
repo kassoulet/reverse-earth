@@ -10,11 +10,15 @@ ARCHIVE = Path(__file__).resolve().parents[2] / "public/data/world.pmtiles"
 EXPECTED_LAYERS = {
     "land",
     "water",
+    "urban",
+    "park",
     "boundary",
     "waterway",
     "place",
     "road",
     "railway",
+    "airport",
+    "port",
 }
 
 
@@ -104,13 +108,13 @@ class ArchiveTests(unittest.TestCase):
         self.assertGreater(len(roads), 0)
         self.assertTrue(
             {feature["properties"].get("class") for feature in roads}
-            <= {"major", "secondary"}
+            <= {"major", "secondary", "minor"}
         )
 
         railways = decoded.get("railway", {}).get("features", [])
         self.assertGreater(len(railways), 0)
         self.assertTrue(
-            all(feature["properties"].get("rank", 99) <= 6 for feature in railways)
+            all(feature["properties"].get("rank", 99) <= 7 for feature in railways)
         )
 
     def test_admin1_labels_appear_only_at_z6(self):
@@ -159,16 +163,49 @@ class ArchiveTests(unittest.TestCase):
 
         roads = decoded.get("road", {}).get("features", [])
         self.assertGreater(len(roads), 0)
-        self.assertEqual(
-            {feature["properties"].get("class") for feature in roads},
-            {"major"},
+        self.assertTrue(
+            {feature["properties"].get("class") for feature in roads}
+            <= {"major", "secondary"}
         )
 
         railways = decoded.get("railway", {}).get("features", [])
         self.assertGreater(len(railways), 0)
         self.assertTrue(
-            all(feature["properties"].get("rank", 99) <= 4 for feature in railways)
+            all(feature["properties"].get("rank", 99) <= 5 for feature in railways)
         )
+
+    def test_urban_airports_ports_and_parks_are_present(self):
+        x, y = tile_for(2.3522, 48.8566, 6)
+        paris = mapbox_vector_tile.decode(gzip.decompress(self.reader.get(6, x, y)))
+        urban = paris.get("urban", {}).get("features", [])
+        self.assertGreater(len(urban), 0)
+        self.assertTrue(
+            all(feature["properties"].get("class") == "urban" for feature in urban)
+        )
+
+        x, y = tile_for(2.541868, 49.01442, 6)
+        cdg = mapbox_vector_tile.decode(gzip.decompress(self.reader.get(6, x, y)))
+        airport_names = {
+            feature["properties"].get("name")
+            for feature in cdg.get("airport", {}).get("features", [])
+        }
+        self.assertIn("Charles de Gaulle Int'l", airport_names)
+
+        x, y = tile_for(4.292874, 51.927222, 6)
+        rotterdam = mapbox_vector_tile.decode(gzip.decompress(self.reader.get(6, x, y)))
+        port_names = {
+            feature["properties"].get("name")
+            for feature in rotterdam.get("port", {}).get("features", [])
+        }
+        self.assertIn("Rotterdam", port_names)
+
+        x, y = tile_for(-110.5885, 44.428, 6)
+        yellowstone = mapbox_vector_tile.decode(gzip.decompress(self.reader.get(6, x, y)))
+        park_names = {
+            feature["properties"].get("name")
+            for feature in yellowstone.get("park", {}).get("features", [])
+        }
+        self.assertIn("Yellowstone", park_names)
 
     def test_archive_fits_the_configured_budget(self):
         self.assertLess(ARCHIVE.stat().st_size, 850_000_000)

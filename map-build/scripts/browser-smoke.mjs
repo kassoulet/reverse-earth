@@ -39,9 +39,16 @@ const MOBILE_URL = new URL(
 ).href;
 const LAYER_IDS = [
   "boundary-admin1",
-  "road-major",
+  "road-minor",
   "road-secondary",
+  "road-major",
   "railway",
+  "urban",
+  "park",
+  "airport-dot",
+  "airport-label",
+  "port-dot",
+  "port-label",
   "place-region",
 ];
 const URL_STATE_EXPRESSION = `(() => {
@@ -320,6 +327,9 @@ async function run() {
             railway: count(["railway"]),
             admin1: count(["boundary-admin1"]),
             regions,
+            urban: count(["urban"]),
+            parks: count(["park"]),
+            airports: count(["airport-dot"]),
           },
           regionSource: map
             .querySourceFeatures("world", { sourceLayer: "place" })
@@ -344,6 +354,9 @@ async function run() {
     if (report.rendered.admin1 === 0) fail("No Admin 1 boundaries were rendered.");
     if (report.rendered.regions === 0) fail("No Admin 1 labels were rendered.");
     if (report.regionSource === 0) fail("The place source has no region labels.");
+    if (report.rendered.urban === 0) fail("No urban areas were rendered.");
+    if (report.rendered.parks === 0) fail("No parks were rendered.");
+    if (report.rendered.airports === 0) fail("No airports were rendered.");
     if (
       Math.abs(initialUrl.zoom - 6) > 0.01 ||
       Math.abs(initialUrl.latitude - 38.9998) > 0.05 ||
