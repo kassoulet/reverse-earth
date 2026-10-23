@@ -1,11 +1,11 @@
-# Reverse Earth
+# Reversed Earth
 
 [![CI](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml)
 [![Deploy to GitHub Pages](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml)
 [![Live smoke test](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml)
 [![Live site](https://img.shields.io/badge/live-kassoulet.github.io%2Freverse--earth-2f6b57)](https://kassoulet.github.io/reverse-earth/)
 
-Reverse Earth is a static, south-up world map built from Natural Earth data.
+Reversed Earth is a static, south-up world map built from Natural Earth data.
 
 - **South is up, north is down, east and west are unchanged.**
 - Antarctica is at the top, Australia and South America in the upper half,
@@ -41,7 +41,7 @@ built and published, the viewer shows a clear “Map data not built yet” panel
 
 ## Map experience
 
-- A “Reverse Earth” splash screen in Roboto Thin holds for at least two seconds
+- A “Reversed Earth” splash screen in Roboto Thin holds for at least two seconds
   and until the first map frame, then fades into the fullscreen, responsive
   MapLibre viewer. It uses the warm map background and an indeterminate
   progress bar. The opening is capped at four seconds.

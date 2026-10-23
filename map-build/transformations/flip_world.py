@@ -222,7 +222,7 @@ def _build_metadata(
     display_bounds: tuple[float, float, float, float],
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
-        "name": meta.get("name") or "Reverse Earth",
+        "name": meta.get("name") or "Reversed Earth",
         "description": (
             meta.get("description")
             or "A world basemap with latitude inverted: south is up, north is down."

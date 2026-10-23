@@ -365,7 +365,7 @@ async function shareCurrentView(): Promise<void> {
   if (typeof navigator.share === "function") {
     try {
       await navigator.share({
-        title: "Reverse Earth",
+        title: "Reversed Earth",
         text,
         url,
       });

@@ -1,4 +1,4 @@
-# Reverse Earth map build pipeline
+# Reversed Earth map build pipeline
 
 This directory produces the single static artifact the viewer needs:
 `public/data/world.pmtiles`.
