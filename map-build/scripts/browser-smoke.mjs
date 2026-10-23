@@ -298,6 +298,45 @@ async function run() {
     await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
     await cdp.send("Page.navigate", { url: MAP_URL });
 
+    const splash = await cdp.waitFor(
+      `(() => {
+        const element = document.querySelector("#splash");
+        if (!element || element.classList.contains("splash--hidden")) return null;
+        const bar = element.querySelector(".splash__progress-bar");
+        if (!bar) return null;
+        const style = getComputedStyle(element);
+        const barStyle = getComputedStyle(bar);
+        const barRect = bar.getBoundingClientRect();
+        if (
+          !style.backgroundImage.includes("gradient") ||
+          barStyle.animationName === "none" ||
+          barRect.width <= 0 ||
+          barRect.height <= 0
+        ) {
+          return null;
+        }
+        return {
+          backgroundImage: style.backgroundImage,
+          backgroundColor: style.backgroundColor,
+          progressAnimation: barStyle.animationName,
+          progressWidth: barRect.width,
+          progressHeight: barRect.height,
+        };
+      })()`,
+      "splash background and progress bar",
+      5_000,
+    );
+    if (!splash.backgroundImage.includes("gradient")) {
+      fail(`The splash has no background: ${JSON.stringify(splash)}`);
+    }
+    if (
+      splash.progressAnimation === "none" ||
+      splash.progressWidth <= 0 ||
+      splash.progressHeight <= 0
+    ) {
+      fail(`The splash progress bar is not animating: ${JSON.stringify(splash)}`);
+    }
+
     await cdp.waitFor(
       'document.querySelector("#map")?.dataset.ready === "true"',
       "map ready",
@@ -1004,6 +1043,7 @@ async function run() {
       response.url.includes("world.pmtiles"),
     );
     const summary = {
+      splash,
       detailLayers: report.rendered,
       northUp: {
         orientation: northUp.orientation,

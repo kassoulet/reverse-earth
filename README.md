@@ -43,7 +43,8 @@ built and published, the viewer shows a clear “Map data not built yet” panel
 
 - A “Reverse Earth” splash screen in Roboto Thin holds for at least two seconds
   and until the first map frame, then fades into the fullscreen, responsive
-  MapLibre viewer. The opening is capped at four seconds.
+  MapLibre viewer. It uses the warm map background and an indeterminate
+  progress bar. The opening is capped at four seconds.
 - Drag, wheel/trackpad zoom, touch drag, pinch zoom and keyboard navigation.
 - `+` / `−` controls (top right).
 - Native **z0–z6** data, overzoom to z14. No duplicated geometry is stored for
@@ -230,7 +231,8 @@ The TypeScript tests cover the coordinate contract, URL state, north-up tile
 inversion, coordinate parsing and place ranking. The Python tests cover the
 Natural Earth projection, geometry cleanup, part splitting, tile encoding, the
 generated PMTiles archive (when present) and the optional MVT latitude-flip
-transform. The browser smoke test starts the built site in headless Chrome and
+transform. The browser smoke test checks the splash background and its
+indeterminate progress bar, then starts the built site in headless Chrome and
 asserts that the z6 Admin 1 boundaries, urban areas, parks, airports, roads,
 railways and region labels are actually rendered, then switches to north-up and
 back, and exercises keyboard selection of both a place result and a coordinate

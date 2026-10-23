@@ -558,7 +558,8 @@ body {
   place-items: center;
   padding: 24px;
   overflow: hidden;
-  background: transparent;
+  background:
+    radial-gradient(circle at 50% 40%, #f7f4ee 0%, var(--land) 62%, #e9e4da 100%);
   pointer-events: none;
   transition:
     opacity 650ms ease,
@@ -570,6 +571,14 @@ body {
   visibility: hidden;
 }
 
+.splash__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+}
+
 .splash__title {
   margin: 0;
   color: var(--ink);
@@ -579,6 +588,35 @@ body {
   line-height: 0.95;
   letter-spacing: -0.055em;
   text-align: center;
+}
+
+.splash__progress {
+  position: relative;
+  width: min(260px, 62vw);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(48, 45, 41, 0.14);
+}
+
+.splash__progress-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: splash-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes splash-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
 }
 
 .loading {
@@ -784,5 +822,12 @@ code {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .splash__progress-bar {
+    left: 20%;
+    width: 60%;
+    animation: none !important;
+    transform: none;
   }
 }
