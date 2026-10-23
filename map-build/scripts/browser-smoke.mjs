@@ -46,6 +46,9 @@ const LAYER_IDS = [
   "urban",
   "park",
   "glacier",
+  "reef",
+  "water-label",
+  "waterway-label",
   "marine-label",
   "physio-label",
   "peak-dot",
@@ -410,6 +413,28 @@ async function run() {
       fail(`Unexpected initial URL state: ${JSON.stringify(initialUrl)}`);
     }
 
+    const readout = await cdp.waitFor(
+      `(() => {
+        const element = document.querySelector("#map-readout");
+        if (!element || element.hidden) return null;
+        const coordinates = document.querySelector("#map-coordinates")?.textContent ?? "";
+        const scale = document.querySelector("#map-scale-label")?.textContent ?? "";
+        const bar = document.querySelector("#map-scale-bar")?.getBoundingClientRect();
+        if (!coordinates || !scale || !bar || bar.width <= 0 || bar.height <= 0) return null;
+        return {
+          coordinates,
+          scale,
+          barWidth: bar.width,
+          ariaLabel: element.getAttribute("aria-label"),
+        };
+      })()`,
+      "map readout",
+      5_000,
+    );
+    if (!readout.coordinates.includes("°") || !readout.ariaLabel?.includes("scale")) {
+      fail(`Unexpected map readout: ${JSON.stringify(readout)}`);
+    }
+
     await cdp.evaluate('document.querySelector("#legend-button")?.click()');
     const legend = await cdp.waitFor(
       `(() => {
@@ -670,6 +695,16 @@ async function run() {
     if (Math.abs(placeMap.lat + 48.8566) > 0.75 || Math.abs(placeMap.lng - 2.3522) > 0.75) {
       fail(`Search did not fly to Paris: ${JSON.stringify(placeMap)}`);
     }
+    const parisReadout = await cdp.waitFor(
+      `(() => {
+        const coordinates = document.querySelector("#map-coordinates")?.textContent ?? "";
+        const scale = document.querySelector("#map-scale-label")?.textContent ?? "";
+        if (!coordinates.includes("48.8") || !scale) return null;
+        return { coordinates, scale };
+      })()`,
+      "Paris readout",
+      5_000,
+    );
     const placeUrl = await cdp.waitFor(
       `(() => {
         const state = ${URL_STATE_EXPRESSION};
@@ -808,6 +843,7 @@ async function run() {
           "#zoom-out",
           "#share-view",
           "#info-button",
+          "#map-readout",
         ];
         const controls = selectors.map((selector) => {
           const element = document.querySelector(selector);
@@ -1106,6 +1142,48 @@ async function run() {
     await closeFeatureCard();
 
     await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [145.5, -15], zoom: 6 });
+      return true;
+    })()`);
+    const reefCount = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        return map.queryRenderedFeatures({ layers: ["reef"] }).length || null;
+      })()`,
+      "coral reef layer",
+      20_000,
+    );
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [6.5, 46.45], zoom: 6 });
+      return true;
+    })()`);
+    const lakeLabelCount = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        return map.queryRenderedFeatures({ layers: ["water-label"] }).length || null;
+      })()`,
+      "lake label layer",
+      20_000,
+    );
+
+    await cdp.evaluate(`(() => {
+      window.__southUpMap?.jumpTo({ center: [-60, -3], zoom: 5 });
+      return true;
+    })()`);
+    const riverLabelCount = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        return map.queryRenderedFeatures({ layers: ["waterway-label"] }).length || null;
+      })()`,
+      "river label layer",
+      20_000,
+    );
+
+    await cdp.evaluate(`(() => {
       window.__southUpMap?.jumpTo({ center: [0, 0], zoom: 0 });
       return true;
     })()`);
@@ -1129,6 +1207,10 @@ async function run() {
     const summary = {
       splash,
       legend,
+      readout: { initial: readout, paris: parisReadout },
+      reefCount,
+      lakeLabelCount,
+      riverLabelCount,
       detailLayers: report.rendered,
       globalDetail,
       northUp: {

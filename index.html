@@ -178,7 +178,11 @@
           <dt>Display transform</dt>
           <dd><code>display_latitude = -latitude</code></dd>
           <dt>Inspect</dt>
-          <dd>Click a place, airport, port or park for a quick detail card.</dd>
+          <dd>
+            Click a place, airport, port, park, ocean/sea, physical region or peak
+            for a quick detail card. The scale bar and center readout stay in real
+            geographic coordinates.
+          </dd>
         </dl>
       </section>
 
@@ -205,7 +209,7 @@
           </li>
           <li>
             <span class="legend__swatch legend__swatch--physio" aria-hidden="true">Aa</span>
-            <span><strong>Physical region</strong><small>Deserts, ranges and plains</small></span>
+            <span><strong>Physical region</strong><small>Deserts, ranges, plains and basins</small></span>
           </li>
           <li>
             <span class="legend__swatch legend__swatch--peak" aria-hidden="true"></span>
@@ -340,6 +344,21 @@
       <div id="loading" class="loading" role="status">
         <span class="loading__spinner" aria-hidden="true"></span>
         <span>Loading map…</span>
+      </div>
+
+      <div
+        id="map-readout"
+        class="map-readout"
+        role="group"
+        aria-label="Map scale and center coordinates"
+        hidden
+      >
+        <span id="map-coordinates" class="map-readout__coordinates"></span>
+        <span class="map-readout__divider" aria-hidden="true"></span>
+        <span class="map-readout__scale">
+          <span id="map-scale-label" class="map-readout__scale-label"></span>
+          <span id="map-scale-bar" class="map-readout__scale-bar" aria-hidden="true"></span>
+        </span>
       </div>
 
       <section

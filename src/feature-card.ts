@@ -82,6 +82,9 @@ const PHYSIO_CLASS_LABELS: Record<string, string> = {
   desert: "Desert",
   range: "Mountain range",
   plain: "Plain",
+  plateau: "Plateau",
+  basin: "Basin",
+  valley: "Valley",
 };
 
 const PEAK_CLASS_LABELS: Record<string, string> = {

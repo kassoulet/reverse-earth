@@ -246,6 +246,20 @@ class OptionalDetailTests(unittest.TestCase):
             [1, 2, 5],
         )
 
+        reef = build.PreparedSource(
+            layer="reef",
+            scale="10m",
+            features=[
+                build.Feature(
+                    geometry=Point(0, 0),
+                    properties={"class": "reef"},
+                    rank=6,
+                )
+            ],
+        )
+        self.assertEqual(build.filtered_features(reef, 4), [])
+        self.assertEqual(len(build.filtered_features(reef, 5)), 1)
+
         peak = build.PreparedSource(
             layer="peak",
             scale="10m",

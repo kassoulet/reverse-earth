@@ -11,6 +11,7 @@ Layer schema (shared with any future filtered OSM source):
     land       polygons
     glacier    polygons (ice caps and glaciers)
     water      polygons (lakes)
+    reef       lines (coral reefs)
     urban      polygons (Natural Earth urban areas at z5-z6)
     park       polygons (Natural Earth parks and protected areas at z5-z6)
     boundary   lines (international and z5-z6 Admin 1 boundaries)
@@ -188,6 +189,10 @@ SOURCES: dict[str, tuple[str, str]] = {
         "b7b26e50ea917d3696aec87f932def2bf5f890f5770e441d59c162c6f4c92a77",
         f"{NE_BASE}/ne_10m_geography_regions_polys.geojson",
     ),
+    "ne_10m_reefs.geojson": (
+        "4dcfb7cb57e7c04108df66ca0ac1bb4125b2b40b6bb45d7d2aa589bd4e46dc57",
+        f"{NE_BASE}/ne_10m_reefs.geojson",
+    ),
 }
 
 SCALE_BY_ZOOM = {
@@ -230,7 +235,11 @@ PHYSIO_CLASS_BY_FEATURECLA = {
     "Range/mtn": "range",
     "Desert": "desert",
     "Plain": "plain",
+    "Plateau": "plateau",
+    "Basin": "basin",
+    "Valley": "valley",
 }
+REEF_MIN_ZOOM = 5
 PEAK_MIN_ZOOM = 5
 PEAK_RANK_BY_ZOOM = {5: 2, 6: 3}
 
@@ -238,6 +247,7 @@ LAYER_ORDER = (
     "land",
     "glacier",
     "water",
+    "reef",
     "urban",
     "park",
     "boundary",
@@ -475,6 +485,14 @@ def build_feature(prepared: PreparedSource, geometry: BaseGeometry, props: dict[
             },
             rank=rank,
             min_zoom=number_value(props.get("min_zoom"), 99),
+        )
+    if layer == "reef":
+        rank = number_value(props.get("scalerank"), 99)
+        return Feature(
+            geometry=geometry,
+            properties={"class": "reef", "rank": rank},
+            rank=rank,
+            min_zoom=REEF_MIN_ZOOM,
         )
     if layer == "glacier":
         rank = number_value(props.get("scalerank"), 99)
@@ -915,6 +933,8 @@ def filtered_features(source: PreparedSource, zoom: int) -> list[Feature]:
             for feature in source.features
             if feature.rank <= limit and feature.min_zoom <= zoom
         ]
+    if source.layer == "reef":
+        return source.features if zoom >= REEF_MIN_ZOOM else []
     if source.layer == "physio":
         limit = PHYSIO_RANK_BY_ZOOM.get(zoom, -1)
         return [
@@ -979,6 +999,12 @@ def prepare_zoom_sources(
         features = filtered_features(loaded[(layer, "10m")], zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
 
+    if zoom >= REEF_MIN_ZOOM:
+        features = filtered_features(loaded[("reef", "10m")], zoom)
+        result["reef"] = (features, STRtree([feature.geometry for feature in features]))
+    else:
+        result["reef"] = ([], None)
+
     for layer in ("marine", "physio", "peak"):
         features = filtered_features(loaded[(layer, "10m")], zoom)
         result[layer] = (features, STRtree([feature.geometry for feature in features]))
@@ -1000,7 +1026,7 @@ def prepare_zoom_sources(
 def extract_geometry(geometry: BaseGeometry, layer: str) -> BaseGeometry | None:
     if layer in ("land", "glacier", "water", "urban", "park"):
         allowed = ("Polygon", "MultiPolygon")
-    elif layer in ("boundary", "waterway", "road", "railway"):
+    elif layer in ("boundary", "waterway", "road", "railway", "reef"):
         allowed = ("LineString", "MultiLineString")
     else:
         allowed = ("Point", "MultiPoint")
@@ -1072,7 +1098,7 @@ def encode_tile(
                 )
                 if layer in ("land", "glacier", "water", "urban", "park"):
                     tile_geometry = tile_geometry.simplify(2.0, preserve_topology=True)
-                elif layer in ("boundary", "waterway", "road", "railway"):
+                elif layer in ("boundary", "waterway", "road", "railway", "reef"):
                     tile_geometry = tile_geometry.simplify(1.0, preserve_topology=False)
                 if tile_geometry.is_empty:
                     continue
@@ -1171,6 +1197,9 @@ def build(
     loaded[("glacier", "10m")] = load_layer(
         cache_dir, "glacier", "ne_10m_glaciated_areas", "10m"
     )
+    loaded[("reef", "10m")] = load_layer(
+        cache_dir, "reef", "ne_10m_reefs", "10m"
+    )
     loaded[("marine", "10m")] = marine_labels(cache_dir)
     loaded[("physio", "10m")] = physical_region_labels(cache_dir)
     loaded[("peak", "10m")] = load_layer(
@@ -1267,6 +1296,7 @@ def build_metadata(minzoom: int, maxzoom: int, counts: dict[str, int]) -> dict[s
         "land": {"class": "String"},
         "water": {"name": "String", "class": "String", "rank": "Number"},
         "glacier": {"class": "String", "rank": "Number"},
+        "reef": {"class": "String", "rank": "Number"},
         "urban": {"class": "String", "rank": "Number"},
         "park": {"name": "String", "type": "String", "rank": "Number"},
         "marine": {"name": "String", "class": "String", "rank": "Number"},

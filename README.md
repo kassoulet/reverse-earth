@@ -47,13 +47,17 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   progress bar. The opening is capped at four seconds.
 - Drag, wheel/trackpad zoom, touch drag, pinch zoom and keyboard navigation.
 - `+` / `−` controls (top right).
+- A live scale bar and the current center's real latitude/longitude sit above the
+  attribution. Both update while panning and zooming and keep real coordinates
+  in either orientation.
 - Native **z0–z6** data, overzoom to z14. No duplicated geometry is stored for
   overzoom.
 - Progressive detail: land, ice sheets, lakes, ocean/sea labels and physical
   region labels at world scale, country boundaries, rivers, capitals, cities
-  and towns as you zoom in. At z5–z6 the map also adds urban areas, parks,
-  airports, ports, named mountain peaks, selected Admin 1 boundaries, a denser
-  road and railway network, and ranked Admin 1 labels at z6.
+  and towns as you zoom in. Named lakes and rivers appear from z4. At z5–z6
+  the map also adds coral reefs, urban areas, parks, airports, ports, named
+  mountain peaks, selected Admin 1 boundaries, a denser road and railway
+  network, and ranked Admin 1 labels at z6.
 - Style in [`public/style.json`](public/style.json): warm land, blue water,
   muted country borders and a compact place-label hierarchy.
 - Self-hosted Noto Sans glyphs; no runtime CDN dependency.
@@ -68,10 +72,9 @@ built and published, the viewer shows a clear “Map data not built yet” panel
   native share sheet where available and copies the URL to the clipboard
   otherwise. The share text names a nearby rendered city, town, region or
   country, and both paths use the same real-coordinate hash as the address bar.
-- Click a place, airport, port, park, ocean/sea, desert, mountain range, plain
-  or mountain peak for a compact card with its category, population, IATA code,
-  elevation or physical-region type where available, and real-world
-  coordinates.
+- Click a place, airport, port, park, ocean/sea, physical region or mountain
+  peak for a compact card with its category, population, IATA code, elevation
+  or physical-region type where available, and real-world coordinates.
 
 Rotation and pitch are deliberately disabled so the plan view stays
 unambiguous. The map still behaves like a conventional pan/zoom viewer in every
@@ -199,7 +202,7 @@ The builder is deliberately database-free:
 - Latitude is negated while projecting, so the tile grid itself is south-up.
 - Geometry is clipped to the display world, which keeps polar rings valid.
 - Multi-geometries are split into small indexed parts before per-tile clipping.
-- MVT layers: `land`, `glacier`, `water`, `urban`, `park`, `boundary`,
+- MVT layers: `land`, `glacier`, `water`, `reef`, `urban`, `park`, `boundary`,
   `waterway`, `place`, `road`, `railway`, `airport`, `port`, `marine`, `physio`,
   `peak`.
 - Admin 1 label anchors use Natural Earth's `min_label`/`labelrank` hints, so
@@ -234,7 +237,7 @@ npm run test:browser
 ```
 
 The TypeScript tests cover the coordinate contract, URL state, north-up tile
-inversion, coordinate parsing and place ranking. The Python tests cover the
+inversion, coordinate parsing, place ranking and scale-bar selection. The Python tests cover the
 Natural Earth projection, geometry cleanup, part splitting, tile encoding, the
 generated PMTiles archive (when present) and the optional MVT latitude-flip
 transform. The browser smoke test checks the splash background and its
@@ -248,9 +251,11 @@ clipboard, and that the share text names the nearby place. Click-to-inspect
 cards are opened for a place, airport, park, port, ocean/sea label, physical
 region and mountain peak, and the card's real-world coordinates are checked in
 both orientations. The legend contents are checked, and the world view is also
-checked for rendered ice sheets and ocean labels. And it
-checks that the share URL keeps real geographic coordinates through orientation
-and search changes. It
+checked for rendered ice sheets and ocean labels. Lake and river labels are
+checked around Lake Geneva and the Amazon. The live scale bar and center
+readout are checked before and after a search flight. And it checks that the
+share URL keeps real geographic coordinates through orientation and search
+changes. It
 needs `world.pmtiles` in `dist/` and a local Chrome or Chromium (override the
 binary with `CHROME_PATH`). Set
 `SMOKE_URL=https://<account>.github.io/<repository>/` to run the same checks
@@ -320,6 +325,7 @@ src/
   coordinates.ts            geoToDisplay / displayToGeo
   feature-card.ts           click-to-inspect card models and formatting
   share-caption.ts          nearby place/region caption for the share sheet
+  scale.ts                  Web Mercator scale-bar calculation
   styles/app.css            minimal UI
 public/
   favicon.svg, favicon.ico  browser icon
@@ -340,8 +346,8 @@ map-build/
 - Application code: MIT (see [`LICENSE`](LICENSE)).
 - Map data: Natural Earth, public domain.
   <https://www.naturalearthdata.com/>
-- Urban areas, airports, ports, parks, glaciers, marine labels, physical
-  regions and mountain peaks: Natural Earth, public domain.
+- Urban areas, airports, ports, parks, glaciers, coral reefs, marine labels,
+  physical regions and mountain peaks: Natural Earth, public domain.
 - Place index: Natural Earth 1:10m populated places, public domain.
 - Map glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
   [`public/fonts/`](public/fonts/).

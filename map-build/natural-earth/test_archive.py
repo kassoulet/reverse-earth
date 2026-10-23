@@ -11,6 +11,7 @@ EXPECTED_LAYERS = {
     "land",
     "glacier",
     "water",
+    "reef",
     "urban",
     "park",
     "boundary",
@@ -132,6 +133,16 @@ class ArchiveTests(unittest.TestCase):
             for feature in everest.get("peak", {}).get("features", [])
         }
         self.assertIn("Mount Everest", peak_names)
+
+        x, y = tile_for(145.5, -15.0, 6)
+        reef = mapbox_vector_tile.decode(
+            gzip.decompress(self.reader.get(6, x, y))
+        )
+        reef_classes = {
+            feature["properties"].get("class")
+            for feature in reef.get("reef", {}).get("features", [])
+        }
+        self.assertIn("reef", reef_classes)
 
     def test_optional_admin1_roads_and_railways_are_present_at_z6(self):
         x, y = tile_for(8.6821, 50.1109, 6)

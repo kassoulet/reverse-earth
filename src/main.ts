@@ -11,6 +11,7 @@ import { displayToGeo, geoToDisplay, wrapLongitude } from "./coordinates";
 import {
   INSPECT_LAYER_IDS,
   buildFeatureCard,
+  formatCoordinates,
   type FeatureCardModel,
 } from "./feature-card";
 import {
@@ -19,6 +20,7 @@ import {
   setMapOrientation,
   type Orientation,
 } from "./map";
+import { scaleBarForView } from "./scale";
 import type { SearchResult } from "./search";
 import { SearchControl } from "./search-control";
 import {
@@ -63,6 +65,10 @@ const featureCardEyebrow = requireElement<HTMLElement>("feature-card-eyebrow");
 const featureCardTitle = requireElement<HTMLElement>("feature-card-title");
 const featureCardSubtitle = requireElement<HTMLElement>("feature-card-subtitle");
 const featureCardFacts = requireElement<HTMLDListElement>("feature-card-facts");
+const mapReadout = requireElement<HTMLElement>("map-readout");
+const mapCoordinates = requireElement<HTMLElement>("map-coordinates");
+const mapScaleBar = requireElement<HTMLElement>("map-scale-bar");
+const mapScaleLabel = requireElement<HTMLElement>("map-scale-label");
 const splash = document.getElementById("splash");
 
 const SPLASH_MIN_MS = 2_000;
@@ -73,6 +79,8 @@ let splashDismissed = false;
 let firstMapFrameReady = false;
 let splashMinTimer: number | undefined;
 let shareStatusTimer: number | undefined;
+let readoutFrame: number | undefined;
+let readoutEnabled = false;
 
 const initialState = readUrlState(window.location.search, window.location.hash);
 
@@ -177,6 +185,8 @@ function showDataState(
 
 function showFailure(error: unknown, url: string): void {
   dismissSplash();
+  readoutEnabled = false;
+  mapReadout.hidden = true;
   setControlsEnabled(false);
 
   if (error instanceof ArchiveProblem) {
@@ -235,6 +245,52 @@ function syncUrl(): void {
     "",
     updateUrl(window.location.href, view, orientation),
   );
+}
+
+function updateMapReadout(): void {
+  if (!map) {
+    mapReadout.hidden = true;
+    return;
+  }
+
+  const center = map.getCenter();
+  let latitude: number;
+  try {
+    latitude =
+      orientation === "north"
+        ? center.lat
+        : displayToGeo(center.lng, center.lat)[1];
+  } catch {
+    mapReadout.hidden = true;
+    return;
+  }
+
+  const coordinates = formatCoordinates(
+    wrapLongitude(center.lng),
+    latitude,
+  );
+  if (!coordinates) {
+    mapReadout.hidden = true;
+    return;
+  }
+
+  const scale = scaleBarForView(latitude, map.getZoom());
+  mapCoordinates.textContent = coordinates;
+  mapScaleLabel.textContent = scale.label;
+  mapScaleBar.style.width = `${scale.pixels.toFixed(1)}px`;
+  mapReadout.setAttribute(
+    "aria-label",
+    `Map center ${coordinates}, scale ${scale.label}`,
+  );
+  if (readoutEnabled && featureCard.hidden) mapReadout.hidden = false;
+}
+
+function scheduleMapReadout(): void {
+  if (!readoutEnabled || readoutFrame !== undefined) return;
+  readoutFrame = window.requestAnimationFrame(() => {
+    readoutFrame = undefined;
+    updateMapReadout();
+  });
 }
 
 function showShareStatus(message: string): void {
@@ -329,6 +385,10 @@ async function shareCurrentView(): Promise<void> {
 function hideFeatureCard(restoreFocus = false): void {
   if (featureCard.hidden) return;
   featureCard.hidden = true;
+  if (readoutEnabled) {
+    mapReadout.hidden = false;
+    updateMapReadout();
+  }
   if (restoreFocus) map?.getCanvas().focus({ preventScroll: true });
 }
 
@@ -345,6 +405,7 @@ function showFeatureCard(card: FeatureCardModel): void {
     featureCardFacts.append(term, value);
   }
   featureCard.hidden = false;
+  mapReadout.hidden = true;
   featureCardClose.focus({ preventScroll: true });
 }
 
@@ -406,6 +467,7 @@ function chooseOrientation(next: Orientation): void {
   orientation = next;
   updateOrientationUI();
   syncUrl();
+  updateMapReadout();
 }
 
 function flyToResult(result: SearchResult): void {
@@ -425,6 +487,8 @@ function flyToResult(result: SearchResult): void {
 async function boot(): Promise<void> {
   hideDataState();
   hideFeatureCard();
+  readoutEnabled = false;
+  mapReadout.hidden = true;
   delete mapContainer.dataset.ready;
   setLoading(true);
   setControlsEnabled(false);
@@ -450,6 +514,7 @@ async function boot(): Promise<void> {
       });
     }
     map.on("moveend", syncUrl);
+    map.on("move", scheduleMapReadout);
     map.on("click", inspectMapFeature);
     updateOrientationUI();
     syncUrl();
@@ -463,6 +528,9 @@ async function boot(): Promise<void> {
     };
     const markReady = (): void => {
       mapContainer.dataset.ready = "true";
+      readoutEnabled = true;
+      mapReadout.hidden = false;
+      updateMapReadout();
       finishLoading();
       markFirstMapFrameReady();
     };

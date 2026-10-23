@@ -85,6 +85,34 @@
       }
     },
     {
+      "id": "reef",
+      "type": "line",
+      "source": "world",
+      "source-layer": "reef",
+      "minzoom": 5,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#c98f7b",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          0.5,
+          6,
+          0.8,
+          10,
+          1.2,
+          14,
+          1.8
+        ],
+        "line-opacity": 0.75
+      }
+    },
+    {
       "id": "waterway",
       "type": "line",
       "source": "world",
@@ -109,6 +137,73 @@
           14,
           3.6
         ]
+      }
+    },
+    {
+      "id": "water-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "water",
+      "minzoom": 4,
+      "filter": ["all", ["has", "name"], ["!=", ["get", "name"], ""]],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Italic"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          4,
+          9,
+          6,
+          10.5,
+          10,
+          12
+        ],
+        "text-max-width": 8,
+        "text-padding": 3,
+        "text-allow-overlap": true,
+        "text-ignore-placement": true
+      },
+      "paint": {
+        "text-color": "#4f7e9d",
+        "text-halo-color": "rgba(157, 199, 225, 0.9)",
+        "text-halo-width": 1.1
+      }
+    },
+    {
+      "id": "waterway-label",
+      "type": "symbol",
+      "source": "world",
+      "source-layer": "waterway",
+      "minzoom": 4,
+      "filter": ["all", ["has", "name"], ["!=", ["get", "name"], ""]],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["KlokanTech Noto Sans Italic"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          4,
+          9,
+          8,
+          10.5,
+          12,
+          12
+        ],
+        "symbol-placement": "line",
+        "text-rotation-alignment": "viewport",
+        "text-pitch-alignment": "viewport",
+        "text-keep-upright": true,
+        "text-letter-spacing": 0.02,
+        "text-max-angle": 30,
+        "text-padding": 2
+      },
+      "paint": {
+        "text-color": "#4d7e9d",
+        "text-halo-color": "rgba(157, 199, 225, 0.9)",
+        "text-halo-width": 1
       }
     },
     {

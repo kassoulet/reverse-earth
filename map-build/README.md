@@ -69,18 +69,19 @@ What it does:
 3. Loads land, lakes, country boundaries, rivers/lake centerlines and populated
    places at 110m, 50m and 10m, plus 10m Admin 1 boundaries, Admin 1 label
    anchors, roads, railways, urban areas, airports, ports, parks, glaciers,
-   ocean/sea label anchors, desert/range/plain label anchors and mountain peaks.
+   coral reefs, ocean/sea label anchors, desert/range/plain/plateau/basin/valley
+   label anchors and mountain peaks.
 4. Projects longitude/latitude into the display world with
    `display_latitude = -latitude`, then clips to the Web Mercator display bounds.
 5. Splits multi-geometries into indexed parts, simplifies, and clips each part
    per tile.
-6. Writes MVT layers `land`, `glacier`, `water`, `urban`, `park`, `boundary`,
-   `waterway`, `place`, `road`, `railway`, `airport`, `port`, `marine`,
-   `physio` and `peak` into a single PMTiles archive, native z0–z6.
+6. Writes MVT layers `land`, `glacier`, `water`, `reef`, `urban`, `park`,
+   `boundary`, `waterway`, `place`, `road`, `railway`, `airport`, `port`,
+   `marine`, `physio` and `peak` into a single PMTiles archive, native z0–z6.
 7. Records `south_up=true`, the coordinate transform and the source commit in
    the archive metadata.
 
-A full build is currently about 5.3 MB, 3,357 non-empty tiles and roughly two
+A full build is currently about 5.3 MB, 3,363 non-empty tiles and roughly two
 minutes of CPU on a laptop.
 
 ### Zoom and detail
@@ -89,7 +90,7 @@ minutes of CPU on a laptop.
 | --- | --- | --- |
 | z0–z2 | 110m | land, major ice sheets, major lakes, ocean names, physical regions, country borders, capitals, country labels |
 | z3–z4 | 50m | more lakes, rivers, boundaries, cities, seas, glaciers and physical regions |
-| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, towns, urban areas, parks, airports, ports, named mountain peaks, selected Admin 1 boundaries, denser roads and railways; selected Admin 1 labels at z6 |
+| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, coral reefs, towns, urban areas, parks, airports, ports, named mountain peaks, selected Admin 1 boundaries, denser roads and railways; selected Admin 1 labels at z6 |
 
 Native z0–z6 are mandatory for V1. The viewer allows overzoom to z14; overzoom
 does not duplicate data in the archive.
@@ -101,6 +102,7 @@ does not duplicate data in the archive.
 | `land` | polygons | `class` |
 | `glacier` | polygons | `class`, `rank` |
 | `water` | polygons | `name`, `class`, `rank` |
+| `reef` | lines | `class`, `rank` |
 | `urban` | polygons | `class`, `rank` |
 | `park` | polygons | `name`, `type`, `rank` |
 | `boundary` | lines | `name`, `kind`, `disputed`, `admin0` |
@@ -128,9 +130,10 @@ airports with `scalerank <= 4` at z5 and `<= 6` at z6; and ports with
 `scalerank <= 4` at z5 and `<= 5` at z6. Glaciers use `scalerank <= 0` at
 z0–z1, rising to the full set at z6; ocean/sea labels use Natural Earth's
 `min_label` plus a scalerank cap (oceans first, then seas, gulfs and bays);
-desert, range and plain labels use the same one-zoom-earlier `min_label` rule
-with a scalerank cap; and mountain peaks appear at z5–z6 with `scalerank <= 2`
-at z5 and `<= 3` at z6.
+desert, range, plain, plateau, basin and valley labels use the same
+one-zoom-earlier `min_label` rule with a scalerank cap; coral reefs appear at
+z5–z6; and mountain peaks appear at z5–z6 with `scalerank <= 2` at z5 and
+`<= 3` at z6.
 Admin 1 labels appear only at z6 and
 only when both `min_label <= 9` and `labelrank <= 5`. The label thresholds
 cover countries whose region labels normally start at z7–z8 (for example
