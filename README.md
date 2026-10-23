@@ -41,7 +41,8 @@ built and published, the viewer shows a clear “Map data not built yet” panel
 
 ## Map experience
 
-- Fullscreen, responsive MapLibre viewer.
+- A two-second “Reverse Earth” splash screen in Roboto Thin fades into the
+  fullscreen, responsive MapLibre viewer.
 - Drag, wheel/trackpad zoom, touch drag, pinch zoom and keyboard navigation.
 - `+` / `−` controls (top right).
 - Native **z0–z6** data, overzoom to z14. No duplicated geometry is stored for
@@ -299,7 +300,7 @@ public/
   favicon.svg, favicon.ico  browser icon
   og-image.png              1200×630 social preview
   style.json                Natural Earth style
-  fonts/                    self-hosted Noto Sans glyphs
+  fonts/                    self-hosted Noto Sans glyphs and Roboto Thin
   data/places.json          offline Natural Earth place index
   data/                    also the destination for world.pmtiles (gitignored)
 map-build/
@@ -315,8 +316,10 @@ map-build/
 - Map data: Natural Earth, public domain.
   <https://www.naturalearthdata.com/>
 - Place index: Natural Earth 1:10m populated places, public domain.
-- Glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
+- Map glyphs: Noto Sans, SIL Open Font License 1.1, self-hosted under
   [`public/fonts/`](public/fonts/).
+- Splash font: Roboto Thin, SIL Open Font License 1.1, self-hosted under
+  [`public/fonts/roboto/`](public/fonts/roboto/).
 - The optional OSM build uses © OpenStreetMap contributors (ODbL 1.0) and the
   OpenMapTiles schema.
 

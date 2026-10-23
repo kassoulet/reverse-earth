@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+  src: url("/fonts/roboto/roboto-thin-latin.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light;
   --land: #f3f0e9;
@@ -399,6 +407,38 @@ body {
 .button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.splash {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 40%, #f7f4ee 0%, var(--land) 62%, #e9e4da 100%);
+  pointer-events: none;
+  animation: splash-out 650ms ease 2s forwards;
+}
+
+.splash__title {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(2.8rem, 11vw, 8.5rem);
+  font-weight: 100;
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+  text-align: center;
+}
+
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
 }
 
 .loading {

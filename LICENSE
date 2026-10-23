@@ -42,5 +42,9 @@ Glyph fonts:
   Noto Sans (Regular, Bold, Italic), licensed under the SIL Open Font License
   1.1. See public/fonts/LICENSE.
 
+Splash font:
+  Roboto Thin, Copyright 2011 The Roboto Project Authors, licensed under the
+  SIL Open Font License 1.1. See public/fonts/roboto/OFL.txt.
+
 Planetiler, MapLibre GL JS and PMTiles are separate open-source projects
 distributed under their own licenses.

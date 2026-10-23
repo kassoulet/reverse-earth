@@ -14,6 +14,13 @@
     <link rel="canonical" href="https://kassoulet.github.io/reverse-earth/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link
+      rel="preload"
+      href="/fonts/roboto/roboto-thin-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Reverse Earth" />
     <meta property="og:title" content="Reverse Earth — south-up world map" />
@@ -51,6 +58,10 @@
   </head>
   <body>
     <main id="app">
+      <div id="splash" class="splash" aria-hidden="true">
+        <p class="splash__title">Reverse Earth</p>
+      </div>
+
       <div
         id="map"
         aria-label="World map with south at the top and north at the bottom"
