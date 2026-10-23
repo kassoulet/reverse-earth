@@ -1,0 +1,93 @@
+name: Publish map data
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example map-data-2026-10"
+        required: true
+        type: string
+  push:
+    tags:
+      - "map-data-*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: map-data-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: map-build/requirements.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install transform dependencies
+        run: python -m pip install -r map-build/requirements.txt
+
+      - name: Cache Natural Earth sources
+        uses: actions/cache@v4
+        with:
+          path: map-build/.cache/ne
+          key: natural-earth-${{ hashFiles('map-build/natural-earth/build_natural_earth.py') }}
+
+      - name: Build the Natural Earth archive
+        run: python map-build/natural-earth/build_natural_earth.py --force --quiet --report map-build/.work/natural-earth-report.json
+
+      - name: Check the archive against the storage budget
+        run: node map-build/scripts/check-size.mjs --archive public/data/world.pmtiles
+
+      - name: Verify the archive schema
+        run: python -m unittest test_archive -v
+        working-directory: map-build/natural-earth
+
+      - name: Write the checksum
+        run: (cd public/data && sha256sum world.pmtiles > world.pmtiles.sha256)
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          test -s public/data/world.pmtiles
+          test -s public/data/world.pmtiles.sha256
+          test -s map-build/.work/natural-earth-report.json
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              public/data/world.pmtiles \
+              public/data/world.pmtiles.sha256 \
+              map-build/.work/natural-earth-report.json \
+              --clobber
+          else
+            gh release create "$TAG" \
+              public/data/world.pmtiles \
+              public/data/world.pmtiles.sha256 \
+              map-build/.work/natural-earth-report.json \
+              --title "Map data $TAG" \
+              --notes "South-up Natural Earth vector archive, native z0-z6. See the attached natural-earth-report.json for the pinned source commit, layer counts and archive size. The pages workflow downloads the world.pmtiles asset from the latest release." \
+              --target "$GITHUB_SHA"
+          fi
+          gh release edit "$TAG" --latest
+          gh release view "$TAG" --json tagName,name,isLatest,assets \
+            --jq '{tag: .tagName, latest: .isLatest, assets: [.assets[].name]}'

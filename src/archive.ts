@@ -1,8 +1,9 @@
 import { PMTiles, TileType, type Header } from "pmtiles";
 
 /**
- * Metadata written by map-build/transformations/flip_world.py.
- * `south_up` is a contract: tiles must already contain lat -> -lat geometry.
+ * Metadata written by the Natural Earth builder (or the optional OSM
+ * flip_world.py transform). `south_up` is a contract: tiles must already
+ * contain lat -> -lat geometry.
  */
 export interface ArchiveMetadata {
   south_up?: boolean;

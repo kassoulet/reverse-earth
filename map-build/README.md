@@ -1,44 +1,39 @@
 # Map build pipeline
 
 This directory produces the single static artifact the viewer needs:
-`south-up world.pmtiles`.
+`public/data/world.pmtiles`.
 
-The pipeline is:
+The default **V1** pipeline uses Natural Earth only. It needs no Java, no OSM
+PBF and no tile database.
 
 ```text
-OSM .osm.pbf
+Pinned Natural Earth GeoJSON (110m / 50m / 10m)
    │
    ▼
-Planetiler 0.10.2 + bundled OpenMapTiles profile
-   │   + ocean/water polygons and Natural Earth sources
+natural-earth/build_natural_earth.py
+   │   display latitude = -latitude
+   │   clip to the display world, simplify per tile, encode MVT
    ▼
-world.mbtiles          (normal Web Mercator orientation)
-   │
-   ▼
-transformations/flip_world.py
-   │   lat → −lat for every vertex
-   │   TMS rows + in-tile y mirrored
-   │   ring winding repaired
-   ▼
-world.pmtiles          (south-up geometry, metadata south_up=true)
+public/data/world.pmtiles   (south-up geometry, native z0–z6)
 ```
 
-No PostGIS, database, tile server or runtime backend is involved. The browser
-reads the PMTiles archive with HTTP range requests.
+The optional **V2** path in `scripts/build-world.sh` is the older
+Planetiler/OpenMapTiles workflow. It is retained for denser detail but is not
+used by the default site.
 
 ## Requirements
 
-| Tool | Version / notes |
-| --- | --- |
-| Java | 25+ (Planetiler 0.10.x requires it) |
-| Node.js | 22+ (size gate and app) |
-| Python | 3.10+ (tested on 3.14) |
-| RAM | roughly 0.5× the input PBF (JVM heap) |
-| Disk | roughly 5–10× the PBF for Planetiler temp, plus input and output |
-| OSM input | Planet PBF or a Geofabrik extract |
+| Tool | Default Natural Earth build | Optional OSM build |
+| --- | --- | --- |
+| Python | 3.10+ (tested on 3.14) | 3.10+ |
+| Node.js | 22+ for the viewer and size gate | 22+ |
+| Java | not required | 25+ (Planetiler 0.10.x) |
+| Input | pinned GeoJSON, downloaded automatically | planet PBF or Geofabrik extract |
+| RAM | a few hundred MB | roughly 0.5× the PBF |
+| Disk | about 300 MB | 5–10× the PBF |
 
-The planet PBF, Planetiler cache, MBTiles and PMTiles output are gitignored and
-must never be committed.
+Natural Earth downloads and generated archives are gitignored and must never be
+committed.
 
 ## One-time setup
 
@@ -47,141 +42,117 @@ python3 -m venv map-build/.venv
 map-build/.venv/bin/pip install -r map-build/requirements.txt
 ```
 
-The transform is pinned to `pmtiles==3.8.1`, `mapbox-vector-tile==2.2.0` and
-`shapely==2.2.0`.
+The Python dependencies are pinned to `pmtiles==3.8.1`,
+`mapbox-vector-tile==2.2.0`, `shapely==2.2.0` and `numpy==2.5.4`.
 
-Planetiler itself is downloaded by the build script and verified against the
-SHA-256 below. It is not vendored.
-
-```text
-0.10.2  f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d
-```
-
-## Build a planet archive
-
-Use a dated snapshot. Record its URL and SHA-256 with your release notes.
+## Build the default archive
 
 ```bash
-npm run map:build -- \
-  --pbf /data/planet-260101.osm.pbf \
-  --heap 48g
+npm run map:build
 ```
 
-What the wrapper does:
-
-1. Checks Java 25+ and the Python transform imports.
-2. Downloads/verifies Planetiler 0.10.2 if needed.
-3. Runs Planetiler with `configuration/planetiler.properties`, `--download`,
-   `--minzoom=0`, `--maxzoom=10` (default), and an MBTiles intermediate.
-4. Runs `flip_world.py` into `world.pmtiles.tmp`.
-5. Checks the archive against the size budget. If the default z10 build is over
-   budget, it re-flips the same MBTiles at z9 and checks again.
-6. Atomically moves the verified archive to `public/data/world.pmtiles`.
-7. Prints the final size and SHA-256; removes the MBTiles and temp directory
-   unless `--keep-intermediate` is used.
-
-The input `.osm.pbf` is never deleted. `planetiler.properties` also leaves
-`free_osm_after_read` off for the same reason.
-
-### Control disk and memory
-
-Planetiler writes a large node map and temporary feature storage. The wrapper
-warns if free space looks smaller than 5× the input. Options:
+Equivalent explicit command:
 
 ```bash
---heap 48g                # JVM -Xmx; roughly 0.5× the PBF
---threads 12
---keep-intermediate       # keep MBTiles + tmp for inspection
+map-build/.venv/bin/python map-build/natural-earth/build_natural_earth.py \
+  --force \
+  --report map-build/.work/natural-earth-report.json
 ```
 
-Planetiler's own guidance for a planet build is a machine with enough RAM for
-about half the PBF and 5–10× the PBF in fast local disk. The Pages workflow does
-**not** run this build.
+What it does:
 
-### Native zoom and z9 fallback
+1. Downloads the pinned Natural Earth GeoJSON files from
+   `nvkelso/natural-earth-vector` at commit
+   `ca96624a56bd078437bca8184e78163e5039ad19`.
+2. Verifies every file against its SHA-256 checksum. A mismatch fails the build;
+   delete the cached file and retry.
+3. Loads land, lakes, country boundaries, rivers/lake centerlines and populated
+   places at 110m, 50m and 10m, plus 10m Admin 1 boundaries, Admin 1 label
+   anchors, roads and railways.
+4. Projects longitude/latitude into the display world with
+   `display_latitude = -latitude`, then clips to the Web Mercator display bounds.
+5. Splits multi-geometries into indexed parts, simplifies, and clips each part
+   per tile.
+6. Writes MVT layers `land`, `water`, `boundary`, `waterway`, `place`, `road`
+   and `railway` into a single PMTiles archive, native z0–z6.
+7. Records `south_up=true`, the coordinate transform and the source commit in
+   the archive metadata.
 
-Native z0–z9 are mandatory. z10 is optional and must fit the budget. A default
-build tries z10 and, if the finished archive is over budget, automatically
-re-flips the retained MBTiles at z9. Request z9 explicitly to skip that attempt:
+A full build is currently about 3.9 MB, 3,312 non-empty tiles and roughly a
+minute and a half of CPU on a laptop.
 
-```bash
-npm run map:build -- --pbf /data/planet-260101.osm.pbf --heap 48g --maxzoom 9
-```
+### Zoom and detail
 
-An explicit `--maxzoom 10` fails the size gate instead of falling back, so a
-requested zoom is never changed silently.
+| Zoom | Natural Earth scale | Content |
+| --- | --- | --- |
+| z0–z2 | 110m | land, major lakes, country borders, capitals, country labels |
+| z3–z4 | 50m | more lakes, rivers, boundaries, cities |
+| z5–z6 | 10m | detailed coastlines, smaller lakes/rivers, towns, selected Admin 1 boundaries, major roads and railways; selected Admin 1 labels at z6 |
 
-The viewer allows overzoom to z14 regardless. Overzoom does not duplicate data
-in the archive; MapLibre scales the native z9/z10 tiles.
+Native z0–z6 are mandatory for V1. The viewer allows overzoom to z14; overzoom
+does not duplicate data in the archive.
 
-### Smoke build
+### Layer schema
 
-```bash
-npm run map:build -- --area monaco --maxzoom 10
-```
+| Layer | Geometry | Fields |
+| --- | --- | --- |
+| `land` | polygons | `class` |
+| `water` | polygons | `name`, `class`, `rank` |
+| `boundary` | lines | `name`, `kind`, `disputed`, `admin0` |
+| `waterway` | lines | `name`, `class`, `rank` |
+| `place` | points | `name`, `name_en`, `kind`, `rank`, `population`, `country`, `capital` |
+| `road` | lines | `name`, `class`, `type`, `rank` |
+| `railway` | lines | `name`, `class`, `rank` |
 
-This downloads a Monaco extract and its sources, then exercises the same
-Planetiler → flip → PMTiles → size-check path. Output still defaults to
-`public/data/world.pmtiles`. For a tiny test download, Planetiler's own
-documentation offers small test source URLs; pass them with `PLANETILER_ARGS`:
+Boundary `kind` is `country` or `admin1`; Admin 1 lines appear only at z5–z6
+and carry their parent country in `admin0`. Place `kind` is one of `country`,
+`capital`, `city`, `town` or `region`. Road `class` is `major` or `secondary`
+(only selected classes reach the tiles). `disputed` is a boolean. `rank` is
+Natural Earth's scalerank/labelrank; lower is more important.
 
-```bash
-PLANETILER_ARGS="--water-polygons-url=... --natural-earth-url=..." \
-  npm run map:build -- --area monaco --maxzoom 10
-```
+The optional detail follows Natural Earth's own `MIN_ZOOM` hints and is
+deliberately filtered: Admin 1 lines with `MIN_ZOOM <= z`, major roads at z5
+with secondary roads added at z6, and railways with `scalerank <= 4` at z5 and
+`<= 6` at z6. Admin 1 labels appear only at z6 and only when both
+`min_label <= 8` and `labelrank <= 4`. Raising the label threshold from 6.6
+covers countries whose region labels normally start at z7–z8 (for example
+Spain, France and Japan) without opening the map to every county. There are no
+buildings, address data or POIs.
 
-The repository does not commit any smoke-test archive.
+### Geometry notes
 
-## Configuration
+Natural Earth ships the whole land layer as one global MultiPolygon. Indexing
+that as a single feature makes every coastal tile a candidate for a
+world-sized intersection. The builder therefore explodes multi-geometries into
+individual polygons before indexing, which keeps per-tile clipping local.
 
-### `configuration/planetiler.properties`
+Clamping latitude at the Web Mercator limit turns Antarctica's ring at the
+south pole into a degenerate line. The builder clips geometry to a display
+world box with a tiny inset (`1e-6` display pixels), which removes that
+degenerate edge and produces valid polar polygons without a costly
+`make_valid` repair of the global land multipolygon.
 
-The important choices:
+Simplification happens once in display space before parts are indexed. If a
+simplified geometry is invalid, the builder keeps the unsimplified version
+rather than emitting invalid MVT.
 
-- `minzoom=0`, `maxzoom=10` (the CLI override is authoritative).
-- `only_layers=water,waterway,water_name,landcover,landuse,park,boundary,transportation,transportation_name,place,aerodrome_label,mountain_peak`
-- `exclude_layers=building,housenumber,poi,aeroway`
-- `use_wikidata=false`, `languages=en`. The style prefers `name:latin`, then
-  `name`, then `name:en`; this avoids embedding full translation sets while
-  keeping labels readable across scripts.
-- `compress_temp=true` to trade CPU for temporary disk.
-- Transport/road-name merging enabled.
-- `tile_compression=gzip`.
+### Tuning and troubleshooting
 
-No buildings, addresses, house numbers, dense POIs, indoor data, benches, trees
-or other street-furniture layers are generated.
+- **Checksum mismatch:** remove the named file under `map-build/.cache/ne/` and
+  rerun. Do not edit the expected hash to match a different download.
+- **Archive too large:** lower `--maxzoom`, or reduce detail by raising the
+  simplification tolerances in `simplify_for_display`. z0–z6 is the intended V1
+  range.
+- **Missing polar land:** check that clipping still uses `WORLD_CLIP`; a raw
+  latitude clamp without the inset can make the global land polygon invalid.
+- **Slow build:** the common cause is indexing one world-spanning geometry
+  instead of its parts. Confirm `explode_parts` runs before `STRtree`.
+- **Blank labels:** confirm the glyph path resolves under the Vite base URL and
+  that the place features retain `kind` and `name`.
 
-### Detail by zoom
+## Storage gate
 
-The generated layers and the style's minzooms together produce:
-
-| Zoom | Content |
-| --- | --- |
-| z0–z3 | land, ocean, ice, country borders, country labels, major capitals |
-| z4–z5 | state boundaries, cities, capitals, major rivers, motorway/trunk, railways, lakes |
-| z6–z7 | towns, primary/secondary roads, parks and broad land cover, county boundaries |
-| z8–z9 | tertiary/minor roads, villages, streams, airports, peaks, road labels |
-| z10 (optional) | finer geometry, additional local roads and place labels |
-| z14 | overzoom only; no native z11–z14 tiles |
-
-### Size tuning
-
-If z10 is over budget, try in this order:
-
-1. Let the default automatic fallback produce z9, or rebuild explicitly with
-   `--maxzoom 9`.
-2. Restrict `only_layers` further (the style requires at least water, boundary,
-   transportation, place and their label companions).
-3. Increase `min_feature_size` / `simplify_tolerance` carefully; these change
-   cartography and are not enabled by default.
-4. Keep `languages=en`, `use_wikidata=false`, `compress_temp=true`.
-
-Do not solve the limit by publishing millions of small files. It is one PMTiles
-archive.
-
-### Storage gate
-
-`configuration/size-budget.json`:
+`configuration/size-budget.json` sets a generous Pages budget:
 
 ```json
 {
@@ -197,173 +168,54 @@ node map-build/scripts/check-size.mjs --archive public/data/world.pmtiles
 node map-build/scripts/check-size.mjs dist --require-data
 ```
 
-The second form is run by the Pages workflow. It prints the largest files,
-total deployment size, archive size and headroom, and exits non-zero on any
-violation.
+The second form runs during the Pages deployment. It fails if the archive is
+missing, the archive exceeds its budget, the deployment exceeds its budget, or
+the deployment reaches GitHub Pages' 1 GB hard limit.
 
-## The latitude inversion
+## Optional OSM / Planetiler path
 
-`transformations/flip_world.py` operates on Mapbox Vector Tiles, not on the
-camera and not with CSS.
-
-### Coordinate contract
+The old V2 workflow is:
 
 ```text
-display_latitude  = -latitude
-display_longitude = longitude
+OSM .osm.pbf
+   │
+   ▼
+Planetiler 0.10.2 + OpenMapTiles profile
+   ▼
+world.mbtiles (normal orientation)
+   │
+   ▼
+transformations/flip_world.py: lat → −lat in every MVT tile
+   ▼
+world.pmtiles (south_up=true)
 ```
-
-The tile-level consequences, with `r` the MBTiles/TMS row and `extent` the MVT
-extent (normally 4096):
-
-```text
-output TMS row  = (2^z - 1) - source TMS row
-output XYZ y    = source TMS row
-in-tile y'      = extent - y
-```
-
-The XYZ line is easy to get wrong. PMTiles tile IDs use XYZ, not TMS. If you
-flip the row once to convert to XYZ and again to build the output address, every
-tile returns to its original row. The end-to-end unit test asserts the correct
-address.
-
-Longitude and the antimeridian are untouched. The Web Mercator latitude limit
-is unchanged; the extreme north and south tiles simply swap ends.
-
-### Why after tile generation?
-
-Planetiler's OpenMapTiles profile reads OSM **and** external sources:
-
-- ocean/water polygons from the OpenMapTiles water-polygon data,
-- Natural Earth for low-zoom context and labels.
-
-Flipping only the OSM node latitudes would leave those sources north-up and
-produce mismatched coastlines and labels. Flipping the final MVT covers every
-source, plus tile clipping and point label anchors. The resulting tiles already
-represent the inverted world; MapLibre receives ordinary vector geometry.
-
-### Winding, holes and labels
-
-Mirroring a polygon flips ring orientation. Decoding to GeoJSON and re-encoding
-with `mapbox_vector_tile` repairs exterior/interior winding and preserves holes.
-Feature properties and feature IDs are retained. If a tile polygon is invalid,
-the encoder attempts to make it valid rather than silently dropping it.
-
-Text is never mirrored: glyph atlases are ordinary textures and MapLibre draws
-text upright. Line labels use MapLibre's `text-keep-upright` behavior. The data
-transform moves label anchors and line geometry, not the glyphs.
-
-The output archive metadata contains:
-
-```json
-{
-  "south_up": true,
-  "transform": "display_latitude = -latitude; display_longitude = longitude"
-}
-```
-
-The web app refuses to render an archive without `south_up: true`.
-
-### Determinism
-
-- Tile gzip uses `mtime=0`.
-- PMTiles directory metadata is gzip-compressed with `mtime=0`.
-- The build script sets `PYTHONHASHSEED=0` so PMTiles content deduplication is
-  stable.
-- Planetiler and Python dependencies are pinned.
-- The OSM snapshot should be dated and recorded. A different snapshot will
-  naturally produce a different archive.
-- The output SHA-256 is written to `map-build/.work/world.pmtiles.sha256` and
-  printed by the build.
-
-### Tests
 
 ```bash
-PYTHONHASHSEED=0 map-build/.venv/bin/python -m unittest discover -s map-build/transformations -p 'test_*.py' -v
+npm run map:build:osm -- --pbf /data/planet-260101.osm.pbf --heap 48g
 ```
 
-Coverage includes:
+Planetiler is downloaded by the wrapper and verified against SHA-256
+`f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d` (0.10.2).
+The wrapper runs Planetiler to MBTiles, flips at MVT level, checks the size
+budget and atomically moves the result into `public/data/world.pmtiles`.
 
-- point/line/multipolygon mirroring,
-- polygon holes and winding after re-encoding,
-- gzip output and deterministic bytes,
-- bounds and center metadata reordering,
-- the TMS ↔ XYZ tile address mapping,
-- an end-to-end MBTiles → PMTiles test that asserts the tile moved rows and the
-  point moved to the correct in-tile position.
+The OSM schema is not consumed by the current `public/style.json`. If you switch
+to this path, use a style written for the OpenMapTiles layers (the previous
+style is available in the repository history), or adapt the style and schema
+together.
 
-## Manual Planetiler invocation
+For the flip implementation, coordinate contract and end-to-end tests, see
+[`transformations/README.md`](transformations/README.md).
 
-If you need to run a stage independently, the equivalent commands are:
+## Verification
 
 ```bash
-java -Xmx48g -jar map-build/.cache/planetiler-0.10.2.jar \
-  --config=map-build/configuration/planetiler.properties \
-  --minzoom=0 --maxzoom=10 \
-  --osm-path=/data/planet-260101.osm.pbf \
-  --output=map-build/.work/world.mbtiles \
-  --tmpdir=map-build/.work/tmp \
-  --download --force
-
-PYTHONHASHSEED=0 map-build/.venv/bin/python \
-  map-build/transformations/flip_world.py \
-  --input map-build/.work/world.mbtiles \
-  --output public/data/world.pmtiles \
-  --force
+npm run typecheck
+npm test
+npm run map:test
+npm run build
+npm run size:check
 ```
 
-## Deploying the archive
-
-The Pages workflow downloads `world.pmtiles` from the **latest GitHub release**
-if it is not present at `public/data/world.pmtiles`:
-
-1. Build the archive.
-2. Attach it to a release under the exact asset name `world.pmtiles`.
-3. Run the "Deploy to GitHub Pages" workflow.
-
-The archive becomes part of the static Pages artifact; the release is not used
-at runtime. If no archive is available, the workflow fails with a clear
-annotation.
-
-See the root [`README.md`](../README.md) for the full deployment and hosting
-notes.
-
-## Troubleshooting
-
-**`Map data not built yet` in the viewer**
-The archive is missing at `public/data/world.pmtiles` (or the configured URL).
-Build it, place it there, or pass `?pmtiles=<url>`.
-
-**`Archive geometry is not south-up`**
-The PMTiles metadata has no `south_up: true`. Did the transform stage run? Do
-not add the flag to a normal archive; rebuild it through `flip_world.py`.
-
-**Java version error**
-Planetiler 0.10.x requires Java 25+. `java -version` must show 25 or newer.
-
-**Out of memory or disk**
-Increase `--heap` (roughly 0.5× the PBF), use a local SSD for
-`map-build/.work`, keep `compress_temp=true`, and make sure the temp filesystem
-has 5–10× the PBF free. The wrapper warns when free space looks low.
-
-**Transform says dependencies are missing**
-```bash
-python3 -m venv map-build/.venv
-map-build/.venv/bin/pip install -r map-build/requirements.txt
-```
-The build script automatically uses `map-build/.venv/bin/python` when present.
-
-**PMTiles header cannot be read over HTTP**
-The host must support HTTP range requests and CORS. GitHub Pages and standard
-static hosts do. A plain `file://` page cannot range-read a remote archive.
-
-**Archive over budget**
-A default build retries at z9 automatically. If z9 is still over budget, or you
-explicitly requested z10, reduce layers/geometry (see "Size tuning"). The
-failed temporary archive stays at `<output>.tmp` for inspection, and any
-existing published archive is left untouched.
-
-**Glyphs missing**
-Keep the `KlokanTech Noto Sans ...` directory names (and their spaces) under
-`public/fonts/`. The style references those exact stacks. MapLibre requests the
-font-stack path URL-encoded; the static server must serve it.
+`map:test` runs the Natural Earth builder tests first, then the optional MVT
+transform tests.

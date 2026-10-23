@@ -12,16 +12,21 @@ import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { Protocol } from "pmtiles";
 import type { MapArchive } from "./archive";
 import { glyphUrlTemplate, resolveAppUrl } from "./config";
-import { geoToDisplay } from "./coordinates";
+import { displayToGeo, geoToDisplay } from "./coordinates";
+import { NORTH_UP_SCHEME, registerNorthUpProtocol } from "./north-up";
 
 export const SOURCE_ID = "world";
 
 /** MapLibre extra zoom levels on top of the archive's native maximum. */
 const VIEW_MAX_ZOOM = 14;
 
+/** The south-up plan view is the default; north-up is a derived comparison. */
+export type Orientation = "south" | "north";
+
 interface VectorSourceSpec {
   type: "vector";
-  url: string;
+  url?: string;
+  tiles?: string[];
   minzoom?: number;
   maxzoom?: number;
   bounds?: [number, number, number, number];
@@ -30,6 +35,7 @@ interface VectorSourceSpec {
 setWorkerUrl(maplibreWorkerUrl);
 
 let protocol: Protocol | undefined;
+let northUpProtocolRegistered = false;
 
 function registerArchive(archive: MapArchive): void {
   if (!protocol) {
@@ -74,33 +80,97 @@ function isWorldArchive(archive: MapArchive): boolean {
   );
 }
 
-function initialZoomForWidth(width: number): number {
-  return Math.max(1.1, Math.min(2.3, Math.log2(Math.max(width, 320) / 320)));
+function initialZoomForViewport(width: number, height: number): number {
+  // Fit the whole Web Mercator world inside the smaller viewport dimension so
+  // Antarctica at the top and the Arctic at the bottom are both visible on
+  // first load, including on portrait phones.
+  const usable = Math.max(240, Math.min(width, height) - 64);
+  return Math.max(0, Math.min(2.3, Math.log2(usable / 256)));
+}
+
+/**
+ * Return the style for an orientation. South-up uses the archive as built;
+ * north-up rewrites the tile template so tiles are read from the
+ * complementary row and inverted client-side.
+ */
+export function styleForOrientation(
+  baseStyle: StyleSpecification,
+  archive: MapArchive,
+  orientation: Orientation,
+): StyleSpecification {
+  if (orientation === "south") return baseStyle;
+
+  const style = structuredClone(baseStyle);
+  const source = style.sources[SOURCE_ID] as VectorSourceSpec | undefined;
+  if (!source) {
+    throw new Error(`style.json has no source named "${SOURCE_ID}".`);
+  }
+
+  delete source.url;
+  source.tiles = [`${NORTH_UP_SCHEME}://${archive.url}/{z}/{x}/{y}`];
+  source.bounds = [
+    archive.header.minLon,
+    -archive.header.maxLat,
+    archive.header.maxLon,
+    -archive.header.minLat,
+  ];
+  return style;
+}
+
+function centerFor(archive: MapArchive, orientation: Orientation): [number, number] {
+  if (isWorldArchive(archive)) return [0, 0];
+  const longitude = archive.header.centerLon;
+  const latitude = archive.header.centerLat;
+  return orientation === "south"
+    ? [longitude, latitude]
+    : displayToGeo(longitude, latitude);
+}
+
+function boundsFor(
+  archive: MapArchive,
+  orientation: Orientation,
+): [[number, number], [number, number]] {
+  const { minLon, minLat, maxLon, maxLat } = archive.header;
+  return orientation === "south"
+    ? [
+        [minLon, minLat],
+        [maxLon, maxLat],
+      ]
+    : [
+        [minLon, -maxLat],
+        [maxLon, -minLat],
+      ];
 }
 
 /**
  * Create the viewer. The archive is registered with the same PMTiles instance
  * that was preflighted, so the map does not re-read the header.
  *
- * Rotation and pitch are disabled: this is a plan-view, south-up map and a
- * tilted camera would make the "east/west unchanged" contract harder to read.
+ * Rotation and pitch are disabled: this is a plan-view map and a tilted
+ * camera would make the "east/west unchanged" contract harder to read.
  */
 export function createMap(
   container: HTMLElement,
   archive: MapArchive,
-  style: StyleSpecification,
+  baseStyle: StyleSpecification,
+  orientation: Orientation = "south",
 ): MapLibreMap {
   registerArchive(archive);
+  if (!northUpProtocolRegistered && protocol) {
+    registerNorthUpProtocol(protocol);
+    northUpProtocolRegistered = true;
+  }
 
   const world = isWorldArchive(archive);
   const map = new MapLibreMap({
     container,
-    style,
-    center: world
-      ? geoToDisplay(0, 0)
-      : [archive.header.centerLon, archive.header.centerLat],
+    style: styleForOrientation(baseStyle, archive, orientation),
+    center: centerFor(archive, orientation),
     zoom: world
-      ? initialZoomForWidth(container.clientWidth || window.innerWidth)
+      ? initialZoomForViewport(
+          container.clientWidth || window.innerWidth,
+          container.clientHeight || window.innerHeight,
+        )
       : Math.max(2, Math.min(6, archive.header.centerZoom)),
     minZoom: 0,
     maxZoom: Math.max(VIEW_MAX_ZOOM, archive.header.maxZoom),
@@ -123,14 +193,38 @@ export function createMap(
   map.keyboard.disableRotation();
 
   if (!world) {
-    map.fitBounds(
-      [
-        [archive.header.minLon, archive.header.minLat],
-        [archive.header.maxLon, archive.header.maxLat],
-      ],
-      { padding: 32, animate: false, maxZoom: 12 },
-    );
+    map.fitBounds(boundsFor(archive, orientation), {
+      padding: 32,
+      animate: false,
+      maxZoom: 12,
+    });
   }
 
   return map;
+}
+
+/**
+ * Switch orientation without losing the place at the center of the viewport.
+ * The camera latitude is converted through the same geographic coordinate
+ * boundary used everywhere else, then re-expressed in the target space.
+ */
+export function setMapOrientation(
+  map: MapLibreMap,
+  archive: MapArchive,
+  baseStyle: StyleSpecification,
+  from: Orientation,
+  to: Orientation,
+): void {
+  if (from === to) return;
+
+  const center = map.getCenter();
+  const [longitude, latitude] =
+    from === "north"
+      ? [center.lng, center.lat]
+      : displayToGeo(center.lng, center.lat);
+  const target: [number, number] =
+    to === "north" ? [longitude, latitude] : geoToDisplay(longitude, latitude);
+
+  map.setStyle(styleForOrientation(baseStyle, archive, to), { diff: true });
+  map.jumpTo({ center: target });
 }

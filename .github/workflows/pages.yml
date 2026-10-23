@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Publish map data"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,6 +19,9 @@ concurrency:
 
 jobs:
   build:
+    # A failed map-data build must not redeploy the site. Pushes and manual
+    # dispatches do not have a workflow_run payload, hence the short circuit.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -36,21 +42,31 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Provide world.pmtiles
+      - name: Provide and verify world.pmtiles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           mkdir -p public/data
+          used_release=0
           if [ -f public/data/world.pmtiles ]; then
             echo "Using the world.pmtiles already in the checkout."
           else
-            echo "Looking for world.pmtiles on the latest GitHub release..."
-            if ! gh release download --repo "$GITHUB_REPOSITORY" --pattern world.pmtiles --dir public/data; then
-              echo "::error title=Map data missing::No public/data/world.pmtiles and no world.pmtiles asset on the latest GitHub release. Build the archive and attach it to a release before deploying. See README.md."
+            used_release=1
+            echo "Looking for world.pmtiles and its checksum on the latest GitHub release..."
+            if ! gh release download --repo "$GITHUB_REPOSITORY" --pattern 'world.pmtiles*' --dir public/data; then
+              echo "::error title=Map data missing::No public/data/world.pmtiles and no world.pmtiles asset on the latest GitHub release. Run npm run map:build, attach the archive to a release, and redeploy. See README.md."
               exit 1
             fi
           fi
           test -s public/data/world.pmtiles
+          if [ "$used_release" -eq 1 ]; then
+            if [ ! -s public/data/world.pmtiles.sha256 ]; then
+              echo "::error title=Checksum missing::The latest release has no world.pmtiles.sha256 asset. Republish it with the Publish map data workflow."
+              exit 1
+            fi
+            (cd public/data && sha256sum -c world.pmtiles.sha256)
+          fi
           ls -lh public/data/world.pmtiles
 
       - name: Work out the Pages base path
@@ -74,6 +90,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site on the first deployment; later runs reuse it.
+          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

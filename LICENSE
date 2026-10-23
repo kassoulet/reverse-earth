@@ -23,11 +23,20 @@ SOFTWARE.
 ---------------------------------------------------------------------------
 
 Map data:
-  © OpenStreetMap contributors, licensed under the Open Database License
-  (ODbL) 1.0. See https://www.openstreetmap.org/copyright
+  Natural Earth, public domain. See https://www.naturalearthdata.com/
+  The default archive contains land, lakes, boundaries, rivers and populated
+  places derived from the pinned Natural Earth release recorded in
+  map-build/natural-earth/build_natural_earth.py.
 
-Map schema:
-  Based on the OpenMapTiles schema. See https://openmaptiles.org
+Place index:
+  Natural Earth 1:10m populated places, public domain.
+  See https://www.naturalearthdata.com/
+
+Optional OSM build path:
+  The alternate archive built with Planetiler/OpenMapTiles contains
+  © OpenStreetMap contributors, licensed under the Open Database License
+  (ODbL) 1.0. See https://www.openstreetmap.org/copyright and
+  https://openmaptiles.org. It is not the default V1 build.
 
 Glyph fonts:
   Noto Sans (Regular, Bold, Italic), licensed under the SIL Open Font License

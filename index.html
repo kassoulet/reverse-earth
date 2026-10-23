@@ -20,10 +20,122 @@
         aria-label="World map with south at the top and north at the bottom"
       ></div>
 
-      <div class="orientation" title="Geographic north points down">
-        <span class="orientation__arrow" aria-hidden="true">↑</span>
-        <span>South is up</span>
+      <div
+        id="orientation"
+        class="orientation"
+        role="group"
+        aria-label="Map orientation"
+      >
+        <button
+          id="orientation-south"
+          class="orientation__option"
+          type="button"
+          aria-pressed="true"
+          disabled
+        >
+          South up
+        </button>
+        <button
+          id="orientation-north"
+          class="orientation__option"
+          type="button"
+          aria-pressed="false"
+          disabled
+        >
+          North up
+        </button>
       </div>
+
+      <button
+        id="info-button"
+        class="info-button"
+        type="button"
+        aria-label="About this map: south is up, north is down"
+        title="South is up. North is down."
+        aria-expanded="false"
+        aria-controls="info-panel"
+      >
+        i
+      </button>
+
+      <section
+        id="info-panel"
+        class="info-panel"
+        role="dialog"
+        aria-labelledby="info-title"
+        hidden
+      >
+        <button id="info-close" class="info-panel__close" type="button">
+          Close
+        </button>
+        <p class="info-panel__eyebrow">South Is Up</p>
+        <h2 id="info-title">About this map</h2>
+        <p>
+          South is up. North is down. East and west are unchanged, and every
+          label stays upright.
+        </p>
+        <dl class="info-panel__facts">
+          <dt>Data</dt>
+          <dd>Natural Earth, public domain. Native zooms 0–6; higher zooms are overzoom.</dd>
+          <dt>Coordinates</dt>
+          <dd>
+            The address bar stores real latitude and longitude (north-positive)
+            plus zoom, so a copied link opens the same place in either
+            orientation. Search accepts <code>latitude, longitude</code>.
+          </dd>
+          <dt>Display transform</dt>
+          <dd><code>display_latitude = -latitude</code></dd>
+        </dl>
+      </section>
+
+      <form id="search-form" class="search" role="search" autocomplete="off">
+        <label class="visually-hidden" for="search-input">
+          Search for a place or coordinates
+        </label>
+        <span class="search__field">
+          <svg
+            class="search__icon"
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            width="16"
+            height="16"
+          >
+            <circle
+              cx="8.5"
+              cy="8.5"
+              r="5.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+            />
+            <path
+              d="M12.7 12.7 17 17"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+          </svg>
+          <input
+            id="search-input"
+            class="search__input"
+            type="search"
+            placeholder="Place or 48.85, 2.35"
+            role="combobox"
+            aria-expanded="false"
+            aria-controls="search-results"
+            aria-autocomplete="list"
+            disabled
+          />
+        </span>
+        <ul
+          id="search-results"
+          class="search__results"
+          role="listbox"
+          aria-label="Search results"
+          hidden
+        ></ul>
+        <p id="search-status" class="search__status" role="status" hidden></p>
+      </form>
 
       <nav id="zoom-controls" class="zoom-controls" aria-label="Zoom">
         <button

@@ -1,5 +1,8 @@
 # Latitude inversion (MVT level)
 
+This is the optional OSM/V2 transform. The default V1 Natural Earth builder
+projects displayed latitude directly, so it does not post-process an archive.
+
 `flip_world.py` converts a normal Planetiler MBTiles archive into a south-up
 PMTiles archive.
 
@@ -55,6 +58,14 @@ Planetiler's profile also reads ocean polygons and Natural Earth data. Applying
 the mirror to the finished MVT is the only stage that covers every source
 consistently, including clipping and label anchor points. This is a data
 transform, not a MapLibre or CSS hack.
+
+## North-up comparison in the viewer
+
+The deployed archive stays south-up. The viewer's North up switch derives the
+other orientation in the browser: for display tile `(z, x, y)` it reads row
+`(2^z - 1) - y` from this archive, applies `y' = extent - y` to every feature
+and reverses polygon rings. That is the exact inverse of this transform, so no
+second archive is needed and text remains upright. See `src/north-up.ts`.
 
 ## Usage
 

@@ -1,0 +1,752 @@
+#!/usr/bin/env node
+/**
+ * Browser smoke test for the built site.
+ *
+ * The archive and style unit tests prove that the data exists. This test
+ * proves the real MapLibre viewer loads it: it starts `vite preview`, launches
+ * headless Chrome over the DevTools protocol, opens the map at z6, and asks
+ * MapLibre which features are actually rendered.
+ *
+ * Requirements:
+ *   - `npm run build` has produced dist/ with data/world.pmtiles
+ *   - Google Chrome or Chromium is installed (override with CHROME_PATH)
+ *
+ * Usage: node map-build/scripts/browser-smoke.mjs
+ */
+
+import { spawn } from "node:child_process";
+import {
+  accessSync,
+  constants as fsConstants,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const PORT = Number(process.env.PREVIEW_PORT ?? 4179);
+const BASE_URL = `http://127.0.0.1:${PORT}/`;
+const MAP_URL = `${BASE_URL}?debug-map=1#map=6/38.9998/-105.543`;
+const MOBILE_URL = `${BASE_URL}?debug-map=1&mobile=1#map=6/38.9998/-105.543`;
+const LAYER_IDS = [
+  "boundary-admin1",
+  "road-major",
+  "road-secondary",
+  "railway",
+  "place-region",
+];
+const URL_STATE_EXPRESSION = `(() => {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#map=")) return null;
+  const parts = hash.slice(5).split("/");
+  if (parts.length !== 3) return null;
+  const zoom = Number(parts[0]);
+  const latitude = Number(parts[1]);
+  const longitude = Number(parts[2]);
+  if (![zoom, latitude, longitude].every(Number.isFinite)) return null;
+  return {
+    zoom,
+    latitude,
+    longitude,
+    orientation: new URLSearchParams(window.location.search).get("orientation"),
+  };
+})()`;
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function onPath(command) {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!directory) continue;
+    const candidate = join(directory, command);
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // Keep looking.
+    }
+  }
+  return undefined;
+}
+
+function findChrome() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const found = candidate.includes("/")
+      ? existsSync(candidate)
+        ? candidate
+        : undefined
+      : onPath(candidate);
+    if (found) return found;
+  }
+  fail(
+    "Chrome/Chromium was not found. Set CHROME_PATH to an executable browser.",
+  );
+}
+
+async function waitForHttp(url, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+    } catch {
+      // The preview server is still starting.
+    }
+    await sleep(200);
+  }
+  fail(`Timed out waiting for ${url}`);
+}
+
+function connectCdp(webSocketUrl) {
+  const ws = new WebSocket(webSocketUrl);
+  const pending = new Map();
+  const consoleErrors = [];
+  const failures = [];
+  const responses = [];
+  let nextId = 0;
+
+  const opened = new Promise((resolveOpen, rejectOpen) => {
+    ws.addEventListener("open", resolveOpen, { once: true });
+    ws.addEventListener("error", rejectOpen, { once: true });
+  });
+
+  ws.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id && pending.has(message.id)) {
+      const { resolve: resolveCall, reject: rejectCall } = pending.get(message.id);
+      pending.delete(message.id);
+      if (message.error) rejectCall(new Error(JSON.stringify(message.error)));
+      else resolveCall(message.result);
+      return;
+    }
+    if (message.method === "Network.responseReceived") {
+      responses.push({
+        url: message.params.response.url,
+        status: message.params.response.status,
+      });
+    }
+    if (message.method === "Network.loadingFailed") {
+      failures.push(message.params.errorText);
+    }
+    if (message.method === "Runtime.consoleAPICalled" && message.params.type === "error") {
+      consoleErrors.push(
+        message.params.args
+          .map((argument) => argument.value ?? argument.description ?? "")
+          .join(" "),
+      );
+    }
+    if (message.method === "Runtime.exceptionThrown") {
+      consoleErrors.push(
+        message.params.exceptionDetails.exception?.description ??
+          message.params.exceptionDetails.text,
+      );
+    }
+  });
+
+  function send(method, params = {}) {
+    const id = ++nextId;
+    return new Promise((resolveCall, rejectCall) => {
+      pending.set(id, { resolve: resolveCall, reject: rejectCall });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+
+  async function evaluate(expression) {
+    const result = await send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (result.exceptionDetails) {
+      throw new Error(
+        result.exceptionDetails.exception?.description ??
+          result.exceptionDetails.text,
+      );
+    }
+    return result.result.value;
+  }
+
+  async function waitFor(expression, label, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    let lastValue;
+    while (Date.now() < deadline) {
+      lastValue = await evaluate(expression);
+      if (lastValue) return lastValue;
+      await sleep(200);
+    }
+    fail(`Timed out waiting for ${label}. Last value: ${JSON.stringify(lastValue)}`);
+  }
+
+  return {
+    opened,
+    send,
+    evaluate,
+    waitFor,
+    consoleErrors,
+    failures,
+    responses,
+    close: () => ws.close(),
+  };
+}
+
+async function run() {
+  const viteBin = join(ROOT, "node_modules/vite/bin/vite.js");
+  if (!existsSync(viteBin)) {
+    fail("Vite is not installed. Run npm ci first.");
+  }
+  if (!existsSync(join(ROOT, "dist/index.html"))) {
+    fail("dist/ is missing. Run npm run build before the browser smoke test.");
+  }
+
+  const preview = spawn(
+    process.execPath,
+    [viteBin, "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"],
+    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let previewLog = "";
+  preview.stdout.on("data", (chunk) => {
+    previewLog += chunk;
+  });
+  preview.stderr.on("data", (chunk) => {
+    previewLog += chunk;
+  });
+
+  const profile = mkdtempSync(join(tmpdir(), "south-up-smoke-"));
+  let chrome;
+  let cdp;
+
+  try {
+    await waitForHttp(BASE_URL, 20_000);
+
+    chrome = spawn(
+      findChrome(),
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--use-angle=swiftshader-webgl",
+        "--remote-debugging-port=0",
+        `--user-data-dir=${profile}`,
+        "--window-size=1280,900",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "about:blank",
+      ],
+      { stdio: "ignore" },
+    );
+
+    const portFile = join(profile, "DevToolsActivePort");
+    const portDeadline = Date.now() + 15_000;
+    while (!existsSync(portFile) && Date.now() < portDeadline) {
+      await sleep(100);
+    }
+    if (!existsSync(portFile)) {
+      fail(`Chrome did not expose a DevTools port. Preview log:\n${previewLog}`);
+    }
+    const debugPort = Number(readFileSync(portFile, "utf8").split("\n")[0]);
+
+    const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json`)).json();
+    const page =
+      targets.find((target) => target.type === "page" && target.url === "about:blank") ??
+      targets.find((target) => target.type === "page");
+    if (!page?.webSocketDebuggerUrl) fail("Chrome has no page target.");
+
+    cdp = connectCdp(page.webSocketDebuggerUrl);
+    await cdp.opened;
+    await cdp.send("Page.enable");
+    await cdp.send("Runtime.enable");
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+    await cdp.send("Page.navigate", { url: MAP_URL });
+
+    await cdp.waitFor(
+      'document.querySelector("#map")?.dataset.ready === "true"',
+      "map ready",
+      20_000,
+    );
+    const initialUrl = await cdp.waitFor(
+      URL_STATE_EXPRESSION,
+      "initial URL state",
+      5_000,
+    );
+
+    const report = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        const count = (layers) => map.queryRenderedFeatures({ layers }).length;
+        const regions = count(["place-region"]);
+        if (regions === 0) return null;
+        return {
+          zoom: map.getZoom(),
+          styleLoaded: map.isStyleLoaded(),
+          layers: Object.fromEntries(
+            ${JSON.stringify(LAYER_IDS)}.map((id) => [id, Boolean(map.getLayer(id))]),
+          ),
+          rendered: {
+            roads: count(["road-major", "road-secondary"]),
+            railway: count(["railway"]),
+            admin1: count(["boundary-admin1"]),
+            regions,
+          },
+          regionSource: map
+            .querySourceFeatures("world", { sourceLayer: "place" })
+            .filter((feature) => feature.properties.kind === "region").length,
+        };
+      })()`,
+      "rendered detail layers",
+      30_000,
+    );
+
+    const missingLayers = Object.entries(report.layers)
+      .filter(([, present]) => !present)
+      .map(([id]) => id);
+    if (missingLayers.length > 0) {
+      fail(`Style layers missing in the browser: ${missingLayers.join(", ")}`);
+    }
+    if (Math.abs(report.zoom - 6) > 0.01) {
+      fail(`Expected z6, got z${report.zoom}`);
+    }
+    if (report.rendered.roads === 0) fail("No road features were rendered.");
+    if (report.rendered.railway === 0) fail("No railway features were rendered.");
+    if (report.rendered.admin1 === 0) fail("No Admin 1 boundaries were rendered.");
+    if (report.rendered.regions === 0) fail("No Admin 1 labels were rendered.");
+    if (report.regionSource === 0) fail("The place source has no region labels.");
+    if (
+      Math.abs(initialUrl.zoom - 6) > 0.01 ||
+      Math.abs(initialUrl.latitude - 38.9998) > 0.05 ||
+      Math.abs(initialUrl.longitude + 105.543) > 0.05 ||
+      initialUrl.orientation !== null
+    ) {
+      fail(`Unexpected initial URL state: ${JSON.stringify(initialUrl)}`);
+    }
+
+    await cdp.evaluate('document.querySelector("#orientation-north")?.click()');
+    const northUp = await cdp.waitFor(
+      `(() => {
+        const container = document.querySelector("#map");
+        const map = window.__southUpMap;
+        if (container?.dataset.orientation !== "north" || !map || !map.loaded()) {
+          return null;
+        }
+        const roads = map.queryRenderedFeatures({
+          layers: ["road-major", "road-secondary"],
+        }).length;
+        if (roads === 0) return null;
+        return {
+          orientation: container.dataset.orientation,
+          southPressed: document.querySelector("#orientation-south")?.getAttribute("aria-pressed"),
+          northPressed: document.querySelector("#orientation-north")?.getAttribute("aria-pressed"),
+          label: container.getAttribute("aria-label"),
+          roads,
+          railway: map.queryRenderedFeatures({ layers: ["railway"] }).length,
+        };
+      })()`,
+      "north-up view",
+      20_000,
+    );
+    if (northUp.southPressed !== "false" || northUp.northPressed !== "true") {
+      fail("North-up orientation controls did not update.");
+    }
+    if (!northUp.label?.includes("north at the top")) {
+      fail("North-up map label is missing.");
+    }
+    if (northUp.railway === 0) fail("North-up view rendered no railways.");
+    const northUrl = await cdp.waitFor(
+      `(() => {
+        const state = ${URL_STATE_EXPRESSION};
+        return state?.orientation === "north" ? state : null;
+      })()`,
+      "north-up URL state",
+      5_000,
+    );
+    if (
+      Math.abs(northUrl.latitude - 38.9998) > 0.05 ||
+      Math.abs(northUrl.longitude + 105.543) > 0.05
+    ) {
+      fail(`North-up URL did not preserve real coordinates: ${JSON.stringify(northUrl)}`);
+    }
+
+    await cdp.evaluate('document.querySelector("#orientation-south")?.click()');
+    const southUp = await cdp.waitFor(
+      `(() => {
+        const container = document.querySelector("#map");
+        const map = window.__southUpMap;
+        if (container?.dataset.orientation !== "south" || !map || !map.loaded()) {
+          return null;
+        }
+        const roads = map.queryRenderedFeatures({
+          layers: ["road-major", "road-secondary"],
+        }).length;
+        if (roads === 0) return null;
+        return {
+          orientation: container.dataset.orientation,
+          southPressed: document.querySelector("#orientation-south")?.getAttribute("aria-pressed"),
+          northPressed: document.querySelector("#orientation-north")?.getAttribute("aria-pressed"),
+          roads,
+        };
+      })()`,
+      "south-up view restored",
+      20_000,
+    );
+    if (southUp.southPressed !== "true" || southUp.northPressed !== "false") {
+      fail("South-up orientation controls did not update after switching back.");
+    }
+    const southUrl = await cdp.waitFor(
+      `(() => {
+        const state = ${URL_STATE_EXPRESSION};
+        return state?.orientation === null ? state : null;
+      })()`,
+      "south-up URL state",
+      5_000,
+    );
+    if (
+      Math.abs(southUrl.latitude - 38.9998) > 0.05 ||
+      Math.abs(southUrl.longitude + 105.543) > 0.05
+    ) {
+      fail(`South-up URL did not preserve real coordinates: ${JSON.stringify(southUrl)}`);
+    }
+
+    const setSearchValue = async (value) => {
+      await cdp.evaluate(`(() => {
+        const input = document.querySelector("#search-input");
+        if (!(input instanceof HTMLInputElement)) return false;
+        input.focus();
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        ).set;
+        setter.call(input, ${JSON.stringify(value)});
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      })()`);
+    };
+    const pressSearchKey = async (key) => {
+      await cdp.evaluate(`(() => {
+        const input = document.querySelector("#search-input");
+        if (!(input instanceof HTMLInputElement)) return false;
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: ${JSON.stringify(key)}, bubbles: true }),
+        );
+        return true;
+      })()`);
+    };
+
+    await setSearchValue("Paris");
+    const placeResult = await cdp.waitFor(
+      `(() => {
+        const title = document.querySelector("#search-result-0 .search__result-title")?.textContent;
+        if (!title) return null;
+        return {
+          title,
+          detail: document.querySelector("#search-result-0 .search__result-detail")?.textContent,
+        };
+      })()`,
+      "place search result",
+      5_000,
+    );
+    if (placeResult.title !== "Paris" || !placeResult.detail?.includes("France")) {
+      fail(`Unexpected place search result: ${JSON.stringify(placeResult)}`);
+    }
+
+    await pressSearchKey("ArrowDown");
+    const activeResult = await cdp.evaluate(
+      'document.querySelector("#search-result-0")?.getAttribute("aria-selected")',
+    );
+    if (activeResult !== "true") fail("ArrowDown did not select the first search result.");
+
+    await pressSearchKey("Enter");
+    await cdp.waitFor(
+      'document.querySelector("#search-input")?.value === "Paris" && document.querySelector("#search-results")?.hidden === true',
+      "place selection",
+      5_000,
+    );
+    const placeMap = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || map.isMoving() || map.getZoom() < 8.5) return null;
+        const center = map.getCenter();
+        return { zoom: map.getZoom(), lat: center.lat, lng: center.lng };
+      })()`,
+      "place search flight",
+      15_000,
+    );
+    if (Math.abs(placeMap.lat + 48.8566) > 0.75 || Math.abs(placeMap.lng - 2.3522) > 0.75) {
+      fail(`Search did not fly to Paris: ${JSON.stringify(placeMap)}`);
+    }
+    const placeUrl = await cdp.waitFor(
+      `(() => {
+        const state = ${URL_STATE_EXPRESSION};
+        return state && Math.abs(state.zoom - 9) < 0.05 ? state : null;
+      })()`,
+      "place URL state",
+      5_000,
+    );
+    if (
+      Math.abs(placeUrl.latitude - 48.8566) > 0.05 ||
+      Math.abs(placeUrl.longitude - 2.3522) > 0.05 ||
+      placeUrl.orientation !== null
+    ) {
+      fail(`Place URL did not keep real southern-up coordinates: ${JSON.stringify(placeUrl)}`);
+    }
+
+    await setSearchValue("48.8566, 2.3522");
+    const coordinateResult = await cdp.waitFor(
+      `(() => {
+        const title = document.querySelector("#search-result-0 .search__result-title")?.textContent;
+        if (!title) return null;
+        return {
+          title,
+          detail: document.querySelector("#search-result-0 .search__result-detail")?.textContent,
+        };
+      })()`,
+      "coordinate search result",
+      5_000,
+    );
+    if (
+      coordinateResult.title !== "48.8566, 2.3522" ||
+      !coordinateResult.detail?.includes("Coordinates")
+    ) {
+      fail(`Unexpected coordinate search result: ${JSON.stringify(coordinateResult)}`);
+    }
+    await pressSearchKey("Enter");
+    await cdp.waitFor(
+      'document.querySelector("#search-input")?.value === "48.8566, 2.3522" && document.querySelector("#search-results")?.hidden === true',
+      "coordinate selection",
+      5_000,
+    );
+    const coordinateUrl = await cdp.waitFor(
+      `(() => {
+        const state = ${URL_STATE_EXPRESSION};
+        return state && Math.abs(state.zoom - 10) < 0.05 ? state : null;
+      })()`,
+      "coordinate URL state",
+      5_000,
+    );
+    if (
+      Math.abs(coordinateUrl.latitude - 48.8566) > 0.05 ||
+      Math.abs(coordinateUrl.longitude - 2.3522) > 0.05
+    ) {
+      fail(`Coordinate URL is wrong: ${JSON.stringify(coordinateUrl)}`);
+    }
+
+    await setSearchValue("no-such-place-xyz");
+    const emptyState = await cdp.waitFor(
+      `(() => {
+        const list = document.querySelector("#search-results");
+        const status = document.querySelector("#search-status");
+        if (!list || !status || !list.hidden || status.hidden) return null;
+        if (!status.textContent?.includes("No matching place")) return null;
+        return { listHidden: list.hidden, status: status.textContent };
+      })()`,
+      "search empty state",
+      5_000,
+    );
+    await pressSearchKey("Escape");
+    const escapedSearch = await cdp.waitFor(
+      `(() => {
+        const input = document.querySelector("#search-input");
+        const list = document.querySelector("#search-results");
+        const status = document.querySelector("#search-status");
+        if (!input || !list || !status) return null;
+        if (!list.hidden || !status.hidden || input.getAttribute("aria-expanded") !== "false") {
+          return null;
+        }
+        return {
+          listHidden: list.hidden,
+          statusHidden: status.hidden,
+          expanded: input.getAttribute("aria-expanded"),
+          blurred: document.activeElement !== input,
+        };
+      })()`,
+      "Escape closing the search",
+      5_000,
+    );
+    if (!escapedSearch.blurred) fail("Escape did not blur the search input.");
+
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+    await cdp.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 5,
+    });
+    // Drop the old handle so the next wait cannot pass on the previous page's
+    // already-ready DOM during navigation.
+    await cdp.evaluate("delete window.__southUpMap");
+    // A different query string (not just a different hash) forces a full
+    // document load, so the map is rebuilt at the mobile viewport.
+    await cdp.send("Page.navigate", { url: MOBILE_URL });
+    await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        return (
+          innerWidth === 390 &&
+          document.querySelector("#map")?.dataset.ready === "true" &&
+          map &&
+          Math.abs(map.getZoom() - 6) < 0.01
+        );
+      })()`,
+      "mobile map ready",
+      20_000,
+    );
+    const mobile = await cdp.waitFor(
+      `(() => {
+        const map = window.__southUpMap;
+        if (!map || !map.loaded()) return null;
+        const roads = map.queryRenderedFeatures({
+          layers: ["road-major", "road-secondary"],
+        }).length;
+        const admin1 = map.queryRenderedFeatures({ layers: ["boundary-admin1"] }).length;
+        if (roads === 0 || admin1 === 0) return null;
+        const selectors = [
+          "#search-input",
+          "#orientation-south",
+          "#orientation-north",
+          "#zoom-in",
+          "#zoom-out",
+          "#info-button",
+        ];
+        const controls = selectors.map((selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return { selector, present: false };
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            selector,
+            present: true,
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            display: style.display,
+            visibility: style.visibility,
+          };
+        });
+        const controlsInsideViewport = controls.every(
+          (control) =>
+            control.present &&
+            control.width > 0 &&
+            control.height > 0 &&
+            control.display !== "none" &&
+            control.visibility !== "hidden" &&
+            control.left >= -1 &&
+            control.top >= -1 &&
+            control.right <= innerWidth + 1 &&
+            control.bottom <= innerHeight + 1,
+        );
+        const canvas = document.querySelector(".maplibregl-canvas")?.getBoundingClientRect();
+        return {
+          viewport: { width: innerWidth, height: innerHeight },
+          controlsInsideViewport,
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+          canvas: canvas
+            ? {
+                left: canvas.left,
+                top: canvas.top,
+                right: canvas.right,
+                bottom: canvas.bottom,
+                width: canvas.width,
+                height: canvas.height,
+              }
+            : null,
+          roads,
+          admin1,
+        };
+      })()`,
+      "mobile viewport",
+      20_000,
+    );
+    if (!mobile.controlsInsideViewport) fail("A map control is outside the mobile viewport.");
+    if (mobile.horizontalOverflow) fail("The mobile viewport has horizontal overflow.");
+    if (!mobile.canvas || mobile.canvas.width < 380 || mobile.canvas.height < 830) {
+      fail(`The mobile map canvas does not fill the viewport: ${JSON.stringify(mobile.canvas)}`);
+    }
+    if (mobile.admin1 === 0) fail("The mobile viewport rendered no Admin 1 boundaries.");
+
+    const failures = cdp.failures.filter((failure) => !failure.includes("ERR_ABORTED"));
+    const pmtilesResponses = cdp.responses.filter((response) =>
+      response.url.includes("world.pmtiles"),
+    );
+    const summary = {
+      detailLayers: report.rendered,
+      northUp: {
+        orientation: northUp.orientation,
+        roads: northUp.roads,
+        railway: northUp.railway,
+      },
+      southUp: { orientation: southUp.orientation, roads: southUp.roads },
+      search: {
+        place: placeResult,
+        coordinate: coordinateResult,
+        keyboardSelected: activeResult === "true",
+        placeZoom: placeMap.zoom,
+        emptyState,
+        escapeClosed: escapedSearch,
+      },
+      urlState: {
+        initial: initialUrl,
+        north: northUrl,
+        south: southUrl,
+        place: placeUrl,
+        coordinate: coordinateUrl,
+      },
+      mobile,
+
+      pmtilesRequests: pmtilesResponses.length,
+      pmtilesStatuses: [...new Set(pmtilesResponses.map((response) => response.status))],
+      consoleErrors: cdp.consoleErrors,
+      failedRequests: failures,
+    };
+    console.log(JSON.stringify(summary, null, 2));
+
+    if (pmtilesResponses.length === 0) fail("The browser never requested world.pmtiles.");
+    if (pmtilesResponses.some((response) => ![200, 206].includes(response.status))) {
+      fail(`world.pmtiles returned an unexpected status: ${JSON.stringify(pmtilesResponses)}`);
+    }
+    if (cdp.consoleErrors.length > 0) {
+      fail(`Console errors: ${cdp.consoleErrors.join(" | ")}`);
+    }
+    if (failures.length > 0) {
+      fail(`Failed browser requests: ${failures.join(" | ")}`);
+    }
+
+    console.log("BROWSER SMOKE TEST PASSED");
+  } finally {
+    cdp?.close();
+    chrome?.kill("SIGTERM");
+    preview?.kill("SIGTERM");
+    await sleep(400);
+    try {
+      rmSync(profile, { recursive: true, force: true });
+    } catch {
+      // Chrome may still be flushing its profile; the temp directory is safe
+      // to leave behind and must not turn a passing test into a failure.
+    }
+  }
+}
+
+run().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

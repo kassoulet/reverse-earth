@@ -156,7 +156,7 @@ if (failures.length > 0) {
   console.error("\nsize-check FAILED:");
   for (const failure of failures) console.error(`  - ${failure}`);
   console.error(
-    "\nIf the archive is too large, rebuild with --maxzoom 9 (z0-z9 are mandatory).",
+    "\nIf the archive is too large, reduce --maxzoom or the Natural Earth detail settings.",
   );
   process.exit(1);
 }

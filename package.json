@@ -2,7 +2,7 @@
   "name": "upside-down-world-map",
   "version": "1.0.0",
   "private": true,
-  "description": "A static, south-up OpenStreetMap vector map built with MapLibre GL JS, PMTiles and Planetiler.",
+  "description": "A static, south-up Natural Earth vector map built with MapLibre GL JS and PMTiles.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -15,13 +15,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "map:build": "bash map-build/scripts/build-world.sh",
+    "test:browser": "node map-build/scripts/browser-smoke.mjs",
+    "map:build": "map-build/.venv/bin/python map-build/natural-earth/build_natural_earth.py --force",
+    "map:build:osm": "bash map-build/scripts/build-world.sh",
     "map:transform": "map-build/.venv/bin/python map-build/transformations/flip_world.py",
-    "map:test": "PYTHONHASHSEED=0 map-build/.venv/bin/python -m unittest discover -s map-build/transformations -p 'test_*.py' -v",
+    "map:test": "PYTHONHASHSEED=0 map-build/.venv/bin/python -m unittest discover -s map-build/natural-earth -p 'test_*.py' -v && PYTHONHASHSEED=0 map-build/.venv/bin/python -m unittest discover -s map-build/transformations -p 'test_*.py' -v",
     "size:check": "node map-build/scripts/check-size.mjs dist"
   },
   "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "maplibre-gl": "^6.15.0",
+    "pbf": "^5.1.2",
     "pmtiles": "^4.5.0"
   },
   "devDependencies": {
