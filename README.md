@@ -1,5 +1,10 @@
 # Reverse Earth
 
+[![CI](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml)
+[![Deploy to GitHub Pages](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml)
+[![Live smoke test](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml)
+[![Live site](https://img.shields.io/badge/live-kassoulet.github.io%2Freverse--earth-2f6b57)](https://kassoulet.github.io/reverse-earth/)
+
 Reverse Earth is a static, south-up world map built from Natural Earth data.
 
 - **South is up, north is down, east and west are unchanged.**
@@ -269,7 +274,8 @@ build does not trigger a deployment.
 
 If you use a custom domain instead of the default `github.io` URL, set
 `VITE_BASE=/` for the build because a custom domain serves the site from its
-root.
+root. Also update the canonical URL, `og:url` and the absolute `og:image` and
+`twitter:image` URLs in [`index.html`](index.html) to the new origin.
 
 The app resolves its style, glyphs and default archive against the Vite base
 URL, so project-site subpaths work without hard-coded `/` paths. The PMTiles
@@ -290,6 +296,8 @@ src/
   coordinates.ts            geoToDisplay / displayToGeo
   styles/app.css            minimal UI
 public/
+  favicon.svg, favicon.ico  browser icon
+  og-image.png              1200×630 social preview
   style.json                Natural Earth style
   fonts/                    self-hosted Noto Sans glyphs
   data/places.json          offline Natural Earth place index
