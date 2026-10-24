@@ -1,9 +1,9 @@
 # Reversed Earth
 
-[![CI](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/ci.yml)
-[![Deploy to GitHub Pages](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/pages.yml)
-[![Live smoke test](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/kassoulet/reverse-earth/actions/workflows/live-smoke.yml)
-[![Live site](https://img.shields.io/badge/live-kassoulet.github.io%2Freverse--earth-2f6b57)](https://kassoulet.github.io/reverse-earth/)
+[![CI](https://github.com/kassoulet/reversed-earth/actions/workflows/ci.yml/badge.svg)](https://github.com/kassoulet/reversed-earth/actions/workflows/ci.yml)
+[![Deploy to GitHub Pages](https://github.com/kassoulet/reversed-earth/actions/workflows/pages.yml/badge.svg)](https://github.com/kassoulet/reversed-earth/actions/workflows/pages.yml)
+[![Live smoke test](https://github.com/kassoulet/reversed-earth/actions/workflows/live-smoke.yml/badge.svg)](https://github.com/kassoulet/reversed-earth/actions/workflows/live-smoke.yml)
+[![Live site](https://img.shields.io/badge/live-kassoulet.github.io%2Freversed--earth-2f6b57)](https://kassoulet.github.io/reversed-earth/)
 
 Reversed Earth is a static, south-up world map built from Natural Earth data.
 

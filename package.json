@@ -1,5 +1,5 @@
 {
-  "name": "reverse-earth",
+  "name": "reversed-earth",
   "version": "1.0.0",
   "private": true,
   "description": "Reversed Earth: a static, south-up Natural Earth vector map built with MapLibre GL JS and PMTiles.",
